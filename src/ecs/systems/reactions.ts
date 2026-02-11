@@ -2,7 +2,7 @@ import {
   EMPTY, SAND, WATER, DIRT, STONE, PLANT, FIRE, GAS, FLUFF, BUG,
   PLASMA, SLIME, ANT, GLASS, CRYSTAL, BIRD, BEE, GUNPOWDER, FLOWER,
   HIVE, NEST, HONEY, ACID, LAVA, SNOW, MOLD, MERCURY, VOID, RUST,
-  SPORE, LIGHTNING, STATIC, TAP, VOLCANO,
+  SPORE, LIGHTNING, STATIC, TAP, VOLCANO, POISON, ALGAE,
 } from '../constants'
 
 export function updateAcid(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
@@ -181,4 +181,33 @@ export function updateRust(g: Uint8Array, x: number, y: number, p: number, cols:
     }
   }
   if (belowCell === EMPTY && rand() < 0.1) { g[idx(x, y + 1)] = RUST; g[p] = EMPTY }
+}
+
+export function updatePoison(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+  const idx = (x: number, y: number) => y * cols + x
+  const belowCell = y < rows - 1 ? g[idx(x, y + 1)] : EMPTY
+  for (let i = 0; i < 3; i++) {
+    const pdx = Math.floor(rand() * 3) - 1, pdy = Math.floor(rand() * 3) - 1
+    if (pdx === 0 && pdy === 0) continue
+    const pnx = x + pdx, pny = y + pdy
+    if (pnx >= 0 && pnx < cols && pny >= 0 && pny < rows) {
+      const pnc = g[idx(pnx, pny)]
+      if ((pnc === BUG || pnc === ANT || pnc === BIRD || pnc === BEE || pnc === SLIME) && rand() < 0.5) {
+        g[idx(pnx, pny)] = POISON
+      } else if (pnc === ALGAE && rand() < 0.08) { g[idx(pnx, pny)] = POISON }
+      else if (pnc === PLANT && rand() < 0.05) { g[idx(pnx, pny)] = POISON }
+      else if (pnc === WATER && rand() < 0.15) { g[idx(pnx, pny)] = EMPTY; if (rand() < 0.5) g[p] = WATER }
+    }
+  }
+  if (g[p] !== POISON) return
+  if (rand() > 0.3) return
+  if (belowCell === EMPTY) { g[idx(x, y + 1)] = POISON; g[p] = EMPTY }
+  else {
+    const pdx = rand() < 0.5 ? -1 : 1
+    const pnx1 = x + pdx, pnx2 = x - pdx
+    if (pnx1 >= 0 && pnx1 < cols && g[idx(pnx1, y + 1)] === EMPTY) { g[idx(pnx1, y + 1)] = POISON; g[p] = EMPTY }
+    else if (pnx2 >= 0 && pnx2 < cols && g[idx(pnx2, y + 1)] === EMPTY) { g[idx(pnx2, y + 1)] = POISON; g[p] = EMPTY }
+    else if (pnx1 >= 0 && pnx1 < cols && g[idx(pnx1, y)] === EMPTY) { g[idx(pnx1, y)] = POISON; g[p] = EMPTY }
+    else if (pnx2 >= 0 && pnx2 < cols && g[idx(pnx2, y)] === EMPTY) { g[idx(pnx2, y)] = POISON; g[p] = EMPTY }
+  }
 }

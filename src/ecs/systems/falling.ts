@@ -1,16 +1,28 @@
-import { EMPTY, SAND, WATER, DIRT, FLUFF, NITRO, SLIME, GUNPOWDER, HONEY, SNOW, POISON,
+import {
+  ARCHETYPE_FLAGS,
+  F_PROJECTILE, F_SPAWNER, F_CREATURE, F_CORROSIVE, F_INFECTIOUS,
+  F_GROWTH, F_BUOYANCY, F_LIGHTNING, F_GRAVITY, F_LIQUID, F_IMMOBILE,
+} from '../archetypes'
+import {
+  EMPTY, WATER, NITRO, SLIME, GUNPOWDER, SNOW,
   FIRE, GAS, PLASMA, EMBER, LAVA, GLASS, STONE, ACID,
   BUG, ANT, ALIEN, WORM, FAIRY, FISH, MOTH, QUARK, CRYSTAL, STATIC, DUST, GLITTER,
   BULLET_S, BULLET_SE, BULLET_SW, BULLET_TRAIL,
   TAP, ANTHILL, HIVE, NEST, GUN, VOLCANO, STAR, BLACK_HOLE,
   MOLD, MERCURY, VOID, RUST, PLANT, SEED, ALGAE,
-  BIRD, BEE, FLOWER } from '../constants'
+  POISON,
+} from '../constants'
 import { updateBug, updateAnt, updateAlien, updateWorm, updateFairy, updateFish, updateMoth } from './creatures'
 import { updateBulletFalling, updateBulletTrail } from './projectiles'
 import { updateTap, updateAnthill, updateHive, updateNest, updateGun, updateVolcano, updateStar, updateBlackHole } from './spawners'
-import { updateAcid, updateLava, updateMold, updateMercury, updateVoid, updateRust } from './reactions'
+import { updateAcid, updateLava, updateMold, updateMercury, updateVoid, updateRust, updatePoison } from './reactions'
 import { updatePlant, updateSeed, updateAlgae } from './growing'
 import { updateQuark, updateCrystal, updateEmber, updateStatic, updateDust, updateGlitter } from './effects'
+import { applyGravity } from './gravity'
+import { applyLiquid } from './liquid'
+
+// Combined mask for particles that have handler flags (dispatched by flag group)
+const HANDLER_MASK = F_PROJECTILE | F_SPAWNER | F_CREATURE | F_CORROSIVE | F_INFECTIOUS | F_GROWTH
 
 export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number): void {
   const idx = (x: number, y: number) => y * cols + x
@@ -20,83 +32,87 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number):
     const leftToRight = rand() < 0.5
     for (let i = 0; i < cols; i++) {
       const x = leftToRight ? i : cols - 1 - i
-      const p = idx(x, y)
+      const p = y * cols + x
       const c = g[p]
       if (c === EMPTY) continue
 
-      const below = idx(x, y + 1)
-      const belowCell = g[below]
+      const flags = ARCHETYPE_FLAGS[c]
 
-      // South-moving bullets
-      if (c === BULLET_S || c === BULLET_SE || c === BULLET_SW) {
-        updateBulletFalling(g, x, y, p, c, cols, rows, leftToRight, rand)
-        continue
-      }
+      // Skip particles handled in the rising pass
+      if (flags & F_BUOYANCY) continue
+      if (flags & F_LIGHTNING) continue
 
-      // Bullet trail fades
-      if (c === BULLET_TRAIL) {
-        updateBulletTrail(g, p, rand)
-        continue
-      }
-
-      // Spawners
-      if (c === TAP) { updateTap(g, x, y, p, cols, rows, rand); continue }
-      if (c === ANTHILL) { updateAnthill(g, x, y, p, cols, rows, rand); continue }
-      if (c === HIVE) { updateHive(g, x, y, p, cols, rows, rand); continue }
-      if (c === NEST) { updateNest(g, x, y, p, cols, rows, rand); continue }
-      if (c === GUN) { updateGun(g, x, y, p, cols, rows, rand); continue }
-      if (c === VOLCANO) { updateVolcano(g, x, y, p, cols, rows, rand); continue }
-      if (c === STAR) { updateStar(g, x, y, p, cols, rows, rand); continue }
-      if (c === BLACK_HOLE) { updateBlackHole(g, x, y, p, cols, rows, rand); continue }
-
-      // SAND
-      if (c === SAND) {
-        if (belowCell === EMPTY) { g[below] = SAND; g[p] = EMPTY }
-        else if (belowCell === WATER || belowCell === ACID) { g[below] = SAND; g[p] = belowCell }
-        else {
-          const dx = rand() < 0.5 ? -1 : 1
-          const nx1 = x + dx, nx2 = x - dx
-          if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y + 1)] === EMPTY) { g[idx(nx1, y + 1)] = SAND; g[p] = EMPTY }
-          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y + 1)] === EMPTY) { g[idx(nx2, y + 1)] = SAND; g[p] = EMPTY }
-        }
-      }
-      // WATER
-      else if (c === WATER) {
-        if (belowCell === EMPTY) { g[below] = WATER; g[p] = EMPTY }
-        else {
-          const dx = rand() < 0.5 ? -1 : 1
-          const nx1 = x + dx, nx2 = x - dx
-          if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y + 1)] === EMPTY) { g[idx(nx1, y + 1)] = WATER; g[p] = EMPTY }
-          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y + 1)] === EMPTY) { g[idx(nx2, y + 1)] = WATER; g[p] = EMPTY }
-          else if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y)] === EMPTY) { g[idx(nx1, y)] = WATER; g[p] = EMPTY }
-          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y)] === EMPTY) { g[idx(nx2, y)] = WATER; g[p] = EMPTY }
-        }
-      }
-      // DIRT
-      else if (c === DIRT) {
-        if (belowCell === EMPTY) { g[below] = DIRT; g[p] = EMPTY }
-        else if (belowCell === WATER) { g[below] = DIRT; g[p] = WATER }
-      }
-      // FLUFF
-      else if (c === FLUFF) {
-        if (rand() < 0.3 && belowCell === EMPTY) { g[below] = FLUFF; g[p] = EMPTY }
-        else if (rand() < 0.15) {
-          const dx = rand() < 0.5 ? -1 : 1
-          if (x + dx >= 0 && x + dx < cols && g[idx(x + dx, y + 1)] === EMPTY) {
-            g[idx(x + dx, y + 1)] = FLUFF; g[p] = EMPTY
+      // ── Handler-flagged particles (flag-based dispatch) ──
+      if (flags & HANDLER_MASK) {
+        if (flags & F_PROJECTILE) {
+          if (c === BULLET_S || c === BULLET_SE || c === BULLET_SW) {
+            updateBulletFalling(g, x, y, p, c, cols, rows, leftToRight, rand)
+          } else if (c === BULLET_TRAIL) {
+            updateBulletTrail(g, p, rand)
+          }
+          // Other bullet directions handled in rising pass
+        } else if (flags & F_SPAWNER) {
+          switch (c) {
+            case TAP: updateTap(g, x, y, p, cols, rows, rand); break
+            case ANTHILL: updateAnthill(g, x, y, p, cols, rows, rand); break
+            case HIVE: updateHive(g, x, y, p, cols, rows, rand); break
+            case NEST: updateNest(g, x, y, p, cols, rows, rand); break
+            case GUN: updateGun(g, x, y, p, cols, rows, rand); break
+            case VOLCANO: updateVolcano(g, x, y, p, cols, rows, rand); break
+            case STAR: updateStar(g, x, y, p, cols, rows, rand); break
+            case BLACK_HOLE: updateBlackHole(g, x, y, p, cols, rows, rand); break
+          }
+        } else if (flags & F_CREATURE) {
+          // Skip flying creatures (handled in rising pass)
+          switch (c) {
+            case BUG: updateBug(g, x, y, p, cols, rows, rand); break
+            case ANT: updateAnt(g, x, y, p, cols, rows, rand); break
+            case ALIEN: updateAlien(g, x, y, p, cols, rows, rand); break
+            case WORM: updateWorm(g, x, y, p, cols, rows, rand); break
+            case FAIRY: updateFairy(g, x, y, p, cols, rows, rand); break
+            case FISH: updateFish(g, x, y, p, cols, rows, rand); break
+            case MOTH: updateMoth(g, x, y, p, cols, rows, rand); break
+            // BIRD, BEE, FIREFLY: handled in rising pass
+          }
+        } else if (flags & F_CORROSIVE) {
+          switch (c) {
+            case ACID: updateAcid(g, x, y, p, cols, rows, rand); break
+            case LAVA: updateLava(g, x, y, p, cols, rows, rand); break
+            case MERCURY: updateMercury(g, x, y, p, cols, rows, rand); break
+            case VOID: updateVoid(g, x, y, p, cols, rows, rand); break
+            case POISON: updatePoison(g, x, y, p, cols, rows, rand); break
+          }
+        } else if (flags & F_INFECTIOUS) {
+          switch (c) {
+            case MOLD: updateMold(g, x, y, p, cols, rows, rand); break
+            case RUST: updateRust(g, x, y, p, cols, rows, rand); break
+            // SPORE: handled in rising pass (has F_BUOYANCY, skipped above)
+          }
+        } else if (flags & F_GROWTH) {
+          switch (c) {
+            case PLANT: updatePlant(g, x, y, p, cols, rows, rand); break
+            case SEED: updateSeed(g, x, y, p, cols, rows, rand); break
+            case ALGAE: updateAlgae(g, x, y, p, cols, rows, rand); break
           }
         }
+        continue
       }
-      // Creatures
-      else if (c === BUG) { updateBug(g, x, y, p, cols, rows, rand) }
-      else if (c === ANT) { updateAnt(g, x, y, p, cols, rows, rand) }
-      else if (c === ALIEN) { updateAlien(g, x, y, p, cols, rows, rand) }
-      else if (c === WORM) { updateWorm(g, x, y, p, cols, rows, rand) }
-      else if (c === FAIRY) { updateFairy(g, x, y, p, cols, rows, rand) }
-      else if (c === FISH) { updateFish(g, x, y, p, cols, rows, rand) }
-      else if (c === MOTH) { updateMoth(g, x, y, p, cols, rows, rand) }
-      // NITRO
-      else if (c === NITRO) {
+
+      // ── Effects handlers (type-specific, unique behaviors without handler flags) ──
+      if (c === QUARK) { updateQuark(g, x, y, p, cols, rows, rand); continue }
+      if (c === CRYSTAL) { updateCrystal(g, x, y, p, cols, rows, rand); continue }
+      if (c === EMBER) { updateEmber(g, x, y, p, cols, rows, rand); continue }
+      if (c === STATIC) { updateStatic(g, x, y, p, cols, rows, rand); continue }
+      if (c === DUST) { updateDust(g, x, y, p, cols, rows, rand); continue }
+      if (c === GLITTER) { updateGlitter(g, x, y, p, cols, rows, rand); continue }
+
+      // ── Inline complex particles (unique reactions + movement) ──
+
+      const below = idx(x, y + 1)
+      const belowCell = y < rows - 1 ? g[below] : c
+
+      // NITRO: contact-triggered explosion + liquid movement
+      if (c === NITRO) {
         const aboveCell = y > 0 ? g[idx(x, y - 1)] : EMPTY
         const shouldExplode =
           (belowCell !== EMPTY && belowCell !== WATER && belowCell !== NITRO) ||
@@ -128,36 +144,12 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number):
           else if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y)] === EMPTY) { g[idx(nx1, y)] = NITRO; g[p] = EMPTY }
           else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y)] === EMPTY) { g[idx(nx2, y)] = NITRO; g[p] = EMPTY }
         }
+        continue
       }
-      // SLIME
-      else if (c === SLIME) {
-        for (let i = 0; i < 2; i++) {
-          const sdx = Math.floor(rand() * 3) - 1, sdy = Math.floor(rand() * 3) - 1
-          if (sdx === 0 && sdy === 0) continue
-          const snx = x + sdx, sny = y + sdy
-          if (snx >= 0 && snx < cols && sny >= 0 && sny < rows) {
-            const snc = g[idx(snx, sny)]
-            if (snc === FIRE || snc === PLASMA || snc === EMBER || snc === LAVA) { g[p] = GAS; break }
-          }
-        }
-        if (g[p] !== SLIME) continue
-        if (rand() < 0.6) continue
-        if (belowCell === EMPTY) { g[below] = SLIME; g[p] = EMPTY }
-        else {
-          const dx = rand() < 0.5 ? -1 : 1
-          const nx = x + dx
-          if (nx >= 0 && nx < cols && g[idx(nx, y + 1)] === EMPTY) { g[idx(nx, y + 1)] = SLIME; g[p] = EMPTY }
-          else if (nx >= 0 && nx < cols && g[idx(nx, y)] === EMPTY && rand() < 0.3) { g[idx(nx, y)] = SLIME; g[p] = EMPTY }
-        }
-      }
-      // Effects
-      else if (c === QUARK) { updateQuark(g, x, y, p, cols, rows, rand) }
-      else if (c === CRYSTAL) { updateCrystal(g, x, y, p, cols, rows, rand) }
-      else if (c === EMBER) { updateEmber(g, x, y, p, cols, rows, rand) }
-      else if (c === STATIC) { updateStatic(g, x, y, p, cols, rows, rand) }
-      // GUNPOWDER
-      else if (c === GUNPOWDER) {
-        for (let i = 0; i < 2; i++) {
+
+      // GUNPOWDER: heat-triggered explosion + granular movement
+      if (c === GUNPOWDER) {
+        for (let gi = 0; gi < 2; gi++) {
           const gdx = Math.floor(rand() * 3) - 1, gdy = Math.floor(rand() * 3) - 1
           if (gdx === 0 && gdy === 0) continue
           const gnx = x + gdx, gny = y + gdy
@@ -189,29 +181,34 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number):
           if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y + 1)] === EMPTY) { g[idx(nx1, y + 1)] = GUNPOWDER; g[p] = EMPTY }
           else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y + 1)] === EMPTY) { g[idx(nx2, y + 1)] = GUNPOWDER; g[p] = EMPTY }
         }
+        continue
       }
-      // HONEY
-      else if (c === HONEY) {
-        if (rand() > 0.15) continue
-        if (belowCell === EMPTY) { g[below] = HONEY; g[p] = EMPTY }
+
+      // SLIME: heat melt + slow liquid movement
+      if (c === SLIME) {
+        for (let si = 0; si < 2; si++) {
+          const sdx = Math.floor(rand() * 3) - 1, sdy = Math.floor(rand() * 3) - 1
+          if (sdx === 0 && sdy === 0) continue
+          const snx = x + sdx, sny = y + sdy
+          if (snx >= 0 && snx < cols && sny >= 0 && sny < rows) {
+            const snc = g[idx(snx, sny)]
+            if (snc === FIRE || snc === PLASMA || snc === EMBER || snc === LAVA) { g[p] = GAS; break }
+          }
+        }
+        if (g[p] !== SLIME) continue
+        if (rand() < 0.6) continue
+        if (belowCell === EMPTY) { g[below] = SLIME; g[p] = EMPTY }
         else {
           const dx = rand() < 0.5 ? -1 : 1
-          const nx1 = x + dx, nx2 = x - dx
-          if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y + 1)] === EMPTY) { g[idx(nx1, y + 1)] = HONEY; g[p] = EMPTY }
-          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y + 1)] === EMPTY) { g[idx(nx2, y + 1)] = HONEY; g[p] = EMPTY }
-          else if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y)] === EMPTY && rand() < 0.3) { g[idx(nx1, y)] = HONEY; g[p] = EMPTY }
-          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y)] === EMPTY && rand() < 0.3) { g[idx(nx2, y)] = HONEY; g[p] = EMPTY }
+          const nx = x + dx
+          if (nx >= 0 && nx < cols && g[idx(nx, y + 1)] === EMPTY) { g[idx(nx, y + 1)] = SLIME; g[p] = EMPTY }
+          else if (nx >= 0 && nx < cols && g[idx(nx, y)] === EMPTY && rand() < 0.3) { g[idx(nx, y)] = SLIME; g[p] = EMPTY }
         }
+        continue
       }
-      // Reactions
-      else if (c === ACID) { updateAcid(g, x, y, p, cols, rows, rand) }
-      else if (c === LAVA) { updateLava(g, x, y, p, cols, rows, rand) }
-      else if (c === MOLD) { updateMold(g, x, y, p, cols, rows, rand) }
-      else if (c === MERCURY) { updateMercury(g, x, y, p, cols, rows, rand) }
-      else if (c === VOID) { updateVoid(g, x, y, p, cols, rows, rand) }
-      else if (c === RUST) { updateRust(g, x, y, p, cols, rows, rand) }
-      // SNOW
-      else if (c === SNOW) {
+
+      // SNOW: heat melt + slow granular movement
+      if (c === SNOW) {
         let melted = false
         if (rand() < 0.4) {
           for (let sdy = -1; sdy <= 1 && !melted; sdy++) {
@@ -234,41 +231,20 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number):
             g[idx(x + sdx, y + 1)] = SNOW; g[p] = EMPTY
           }
         }
+        continue
       }
-      // Growing
-      else if (c === PLANT) { updatePlant(g, x, y, p, cols, rows, rand) }
-      else if (c === SEED) { updateSeed(g, x, y, p, cols, rows, rand) }
-      else if (c === ALGAE) { updateAlgae(g, x, y, p, cols, rows, rand) }
-      // POISON
-      else if (c === POISON) {
-        for (let i = 0; i < 3; i++) {
-          const pdx = Math.floor(rand() * 3) - 1, pdy = Math.floor(rand() * 3) - 1
-          if (pdx === 0 && pdy === 0) continue
-          const pnx = x + pdx, pny = y + pdy
-          if (pnx >= 0 && pnx < cols && pny >= 0 && pny < rows) {
-            const pnc = g[idx(pnx, pny)]
-            if ((pnc === BUG || pnc === ANT || pnc === BIRD || pnc === BEE || pnc === SLIME) && rand() < 0.5) {
-              g[idx(pnx, pny)] = POISON
-            } else if (pnc === ALGAE && rand() < 0.08) { g[idx(pnx, pny)] = POISON }
-            else if (pnc === PLANT && rand() < 0.05) { g[idx(pnx, pny)] = POISON }
-            else if (pnc === WATER && rand() < 0.15) { g[idx(pnx, pny)] = EMPTY; if (rand() < 0.5) g[p] = WATER }
-          }
-        }
-        if (rand() > 0.3) continue
-        if (belowCell === EMPTY) { g[below] = POISON; g[p] = EMPTY }
-        else {
-          const pdx = rand() < 0.5 ? -1 : 1
-          const pnx1 = x + pdx, pnx2 = x - pdx
-          if (pnx1 >= 0 && pnx1 < cols && g[idx(pnx1, y + 1)] === EMPTY) { g[idx(pnx1, y + 1)] = POISON; g[p] = EMPTY }
-          else if (pnx2 >= 0 && pnx2 < cols && g[idx(pnx2, y + 1)] === EMPTY) { g[idx(pnx2, y + 1)] = POISON; g[p] = EMPTY }
-          else if (pnx1 >= 0 && pnx1 < cols && g[idx(pnx1, y)] === EMPTY) { g[idx(pnx1, y)] = POISON; g[p] = EMPTY }
-          else if (pnx2 >= 0 && pnx2 < cols && g[idx(pnx2, y)] === EMPTY) { g[idx(pnx2, y)] = POISON; g[p] = EMPTY }
-        }
+
+      // ── Immobile particles with no further behavior ──
+      if (flags & F_IMMOBILE) continue
+
+      // ── Generic movement (SAND, WATER, DIRT, FLUFF, HONEY) ──
+      let moved = false
+      if (flags & F_GRAVITY) {
+        moved = applyGravity(g, x, y, p, cols, rows, c, rand)
       }
-      // DUST
-      else if (c === DUST) { updateDust(g, x, y, p, cols, rows, rand) }
-      // GLITTER
-      else if (c === GLITTER) { updateGlitter(g, x, y, p, cols, rows, rand) }
+      if (!moved && (flags & F_LIQUID)) {
+        applyLiquid(g, x, y, p, cols, c, rand)
+      }
     }
   }
 }

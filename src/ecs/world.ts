@@ -1,5 +1,4 @@
 import { createWorld, getAllEntities, removeEntity, type World } from 'bitecs'
-import { Position, ParticleType } from './components'
 import { CELL_SIZE, EMPTY } from './constants'
 
 export interface GridState {
@@ -11,12 +10,7 @@ export interface GridState {
 
 export type GameWorld = World<{
   grid: GridState
-}> & {
-  components: {
-    Position: typeof Position
-    ParticleType: typeof ParticleType
-  }
-}
+}>
 
 export function createGameWorld(): GameWorld {
   return createWorld({
@@ -25,10 +19,6 @@ export function createGameWorld(): GameWorld {
       rows: 0,
       spatialGrid: new Int32Array(0),
       typeGrid: new Uint8Array(0),
-    },
-    components: {
-      Position,
-      ParticleType,
     },
   }) as GameWorld
 }

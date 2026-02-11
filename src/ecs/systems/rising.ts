@@ -1,15 +1,21 @@
-import { EMPTY, FIRE, BLUE_FIRE, GAS, SPORE, CLOUD, FIREWORK, BUBBLE, COMET, PLASMA, LIGHTNING,
-  BULLET_N, BULLET_NW, PLANT, FLUFF, BUG, GUNPOWDER, FLOWER, HIVE, NEST, EMBER, SAND, GLASS,
-  WATER, ACID, HONEY, POISON, MOLD, ALGAE, DIRT, STONE, STATIC, NITRO, BULLET_S, BULLET_SE, BULLET_SW,
-  GLITTER, BULLET_TRAIL, BIRD, BEE, FIREFLY } from '../constants'
+import {
+  ARCHETYPE_FLAGS,
+  F_PROJECTILE, F_CREATURE, F_INFECTIOUS,
+} from '../archetypes'
+import {
+  EMPTY, FIRE, BLUE_FIRE, GAS, SPORE, CLOUD, FIREWORK, BUBBLE, COMET, PLASMA, LIGHTNING,
+  BULLET_N, BULLET_NW, BULLET_S, BULLET_SE, BULLET_SW, BULLET_TRAIL,
+  PLANT, FLUFF, BUG, GUNPOWDER, FLOWER, HIVE, NEST, EMBER, SAND, GLASS,
+  WATER, ACID, HONEY, POISON, MOLD, ALGAE, DIRT, STONE, STATIC, NITRO, GLITTER,
+  BIRD, BEE, FIREFLY,
+} from '../constants'
 import { updateBulletRising } from './projectiles'
-import { updateBird } from './creatures'
-import { updateBee } from './creatures'
-import { updateFirefly } from './creatures'
+import { updateBird, updateBee, updateFirefly } from './creatures'
 
 export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): void {
   const idx = (x: number, y: number) => y * cols + x
   const rand = Math.random
+
   for (let y = 0; y < rows; y++) {
     const leftToRight = rand() < 0.5
     for (let i = 0; i < cols; i++) {
@@ -18,16 +24,34 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
       const c = g[p]
       if (c === EMPTY) continue
 
-      // Bullets (rising): BULLET_N through BULLET_NW
-      if (c >= BULLET_N && c <= BULLET_NW) {
-        updateBulletRising(g, x, y, p, c, cols, rows, leftToRight, rand)
+      const flags = ARCHETYPE_FLAGS[c]
+
+      // ── Projectiles (flag-based) ──
+      if (flags & F_PROJECTILE) {
+        // Only rising/horizontal bullets in this pass
+        if (c >= BULLET_N && c <= BULLET_NW &&
+            c !== BULLET_S && c !== BULLET_SE && c !== BULLET_SW && c !== BULLET_TRAIL) {
+          updateBulletRising(g, x, y, p, c, cols, rows, leftToRight, rand)
+        }
+        continue
       }
 
-      // FIRE / BLUE_FIRE
-      else if (c === FIRE || c === BLUE_FIRE) {
+      // ── Flying creatures (flag-based) ──
+      if (flags & F_CREATURE) {
+        switch (c) {
+          case BIRD: updateBird(g, x, y, p, cols, rows, rand); break
+          case BEE: updateBee(g, x, y, p, cols, rows, rand); break
+          case FIREFLY: updateFirefly(g, x, y, p, cols, rows, rand); break
+          // Ground creatures: skip (handled in falling pass)
+        }
+        continue
+      }
+
+      // ── FIRE / BLUE_FIRE (inline — complex ignition + decay + rise) ──
+      if (c === FIRE || c === BLUE_FIRE) {
         if (y === 0) { g[p] = EMPTY; continue }
         if (rand() < 0.1) { g[p] = rand() < 0.25 ? GAS : rand() < 0.15 ? EMBER : EMPTY; continue }
-        for (let i = 0; i < 3; i++) {
+        for (let fi = 0; fi < 3; fi++) {
           const dx = Math.floor(rand() * 3) - 1, dy = Math.floor(rand() * 3) - 1
           if (dx === 0 && dy === 0) continue
           const nx = x + dx, ny = y + dy
@@ -44,10 +68,11 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
             g[idx(x + dx, y - 1)] = c; g[p] = EMPTY
           }
         }
+        continue
       }
 
-      // GAS
-      else if (c === GAS) {
+      // ── GAS (inline — decay + rise + lateral) ──
+      if (c === GAS) {
         if (y === 0) { g[p] = EMPTY; continue }
         if (rand() < 0.02) { g[p] = EMPTY; continue }
         const up = idx(x, y - 1)
@@ -60,34 +85,64 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
             g[idx(x + dx, y)] = GAS; g[p] = EMPTY
           }
         }
+        continue
       }
 
-      // SPORE
-      else if (c === SPORE) {
-        if (rand() < 0.01) { g[p] = EMPTY; continue }
-        for (let i = 0; i < 3; i++) {
-          const sdx = Math.floor(rand() * 3) - 1, sdy = Math.floor(rand() * 3) - 1
-          if (sdx === 0 && sdy === 0) continue
-          const snx = x + sdx, sny = y + sdy
-          if (snx >= 0 && snx < cols && sny >= 0 && sny < rows) {
-            const snc = g[idx(snx, sny)]
-            if ((snc === PLANT || snc === FLOWER || snc === FLUFF || snc === HONEY || snc === DIRT || snc === ALGAE) && rand() < 0.35) {
-              g[idx(snx, sny)] = MOLD; g[p] = EMPTY; break
+      // ── PLASMA (inline — decay + conversion + rise) ──
+      if (c === PLASMA) {
+        if (y === 0) { g[p] = EMPTY; continue }
+        if (rand() < 0.08) { g[p] = EMPTY; continue }
+        for (let pi = 0; pi < 3; pi++) {
+          const dx = Math.floor(rand() * 3) - 1, dy = Math.floor(rand() * 3) - 1
+          if (dx === 0 && dy === 0) continue
+          const nx = x + dx, ny = y + dy
+          if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
+            const nc = g[idx(nx, ny)]
+            if (nc === SAND && rand() < 0.5) g[idx(nx, ny)] = PLASMA
+            else if ((nc === PLANT || nc === FLUFF || nc === GAS || nc === FLOWER) && rand() < 0.5) g[idx(nx, ny)] = FIRE
+          }
+        }
+        const up = idx(x, y - 1)
+        if (y > 0 && g[up] === EMPTY) { g[up] = PLASMA; g[p] = EMPTY }
+        else {
+          const dx = rand() < 0.5 ? -1 : 1
+          if (y > 0 && x + dx >= 0 && x + dx < cols && g[idx(x + dx, y - 1)] === EMPTY) {
+            g[idx(x + dx, y - 1)] = PLASMA; g[p] = EMPTY
+          }
+        }
+        continue
+      }
+
+      // ── SPORE (infectious handler — inline rising behavior) ──
+      if (flags & F_INFECTIOUS) {
+        if (c === SPORE) {
+          if (rand() < 0.01) { g[p] = EMPTY; continue }
+          for (let si = 0; si < 3; si++) {
+            const sdx = Math.floor(rand() * 3) - 1, sdy = Math.floor(rand() * 3) - 1
+            if (sdx === 0 && sdy === 0) continue
+            const snx = x + sdx, sny = y + sdy
+            if (snx >= 0 && snx < cols && sny >= 0 && sny < rows) {
+              const snc = g[idx(snx, sny)]
+              if ((snc === PLANT || snc === FLOWER || snc === FLUFF || snc === HONEY || snc === DIRT || snc === ALGAE) && rand() < 0.35) {
+                g[idx(snx, sny)] = MOLD; g[p] = EMPTY; break
+              }
+            }
+          }
+          if (g[p] !== SPORE) continue
+          if (rand() < 0.4) {
+            const sdx = Math.floor(rand() * 3) - 1
+            const sdy = rand() < 0.6 ? -1 : (rand() < 0.5 ? 0 : 1)
+            const snx = x + sdx, sny = y + sdy
+            if (snx >= 0 && snx < cols && sny >= 0 && sny < rows && g[idx(snx, sny)] === EMPTY) {
+              g[idx(snx, sny)] = SPORE; g[p] = EMPTY
             }
           }
         }
-        if (rand() < 0.4) {
-          const sdx = Math.floor(rand() * 3) - 1
-          const sdy = rand() < 0.6 ? -1 : (rand() < 0.5 ? 0 : 1)
-          const snx = x + sdx, sny = y + sdy
-          if (snx >= 0 && snx < cols && sny >= 0 && sny < rows && g[idx(snx, sny)] === EMPTY) {
-            g[idx(snx, sny)] = SPORE; g[p] = EMPTY
-          }
-        }
+        continue
       }
 
-      // CLOUD
-      else if (c === CLOUD) {
+      // ── CLOUD (spawner handler — inline rising behavior) ──
+      if (c === CLOUD) {
         if (y < rows - 1 && g[idx(x, y + 1)] === EMPTY && rand() < 0.04) g[idx(x, y + 1)] = WATER
         if (rand() < 0.3) {
           const dx = rand() < 0.5 ? -1 : 1
@@ -97,10 +152,11 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
             g[idx(nx, ny)] = CLOUD; g[p] = EMPTY
           }
         }
+        continue
       }
 
-      // FIREWORK
-      else if (c === FIREWORK) {
+      // ── FIREWORK (inline — rising burst effect) ──
+      if (c === FIREWORK) {
         if (y > 0 && rand() < 0.95) {
           const above = idx(x, y - 1)
           if (g[above] === EMPTY) { g[above] = FIREWORK; g[p] = EMPTY }
@@ -134,12 +190,13 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
             }
           }
         }
+        continue
       }
 
-      // BUBBLE
-      else if (c === BUBBLE) {
+      // ── BUBBLE (inline — liquid navigation) ──
+      if (c === BUBBLE) {
         let inLiquid = false
-        for (let i = 0; i < 3; i++) {
+        for (let bi = 0; bi < 3; bi++) {
           const bdx = Math.floor(rand() * 3) - 1, bdy = Math.floor(rand() * 3) - 1
           const bnx = x + bdx, bny = y + bdy
           if (bnx >= 0 && bnx < cols && bny >= 0 && bny < rows) {
@@ -155,7 +212,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
               g[above] = BUBBLE; g[p] = ac
             } else if (ac === EMPTY) {
               g[p] = EMPTY
-              for (let i = 0; i < 3; i++) {
+              for (let bi = 0; bi < 3; bi++) {
                 const sx = x + Math.floor(rand() * 3) - 1
                 const sy = y - 1 - Math.floor(rand() * 2)
                 if (sx >= 0 && sx < cols && sy >= 0 && sy < rows && g[idx(sx, sy)] === EMPTY) {
@@ -177,10 +234,11 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
         } else {
           g[p] = GAS
         }
+        continue
       }
 
-      // COMET
-      else if (c === COMET) {
+      // ── COMET (inline — fast rising with trail) ──
+      if (c === COMET) {
         const cdy = rand() < 0.8 ? -2 : -1
         const cdx = Math.floor(rand() * 3) - 1
         let moved = false
@@ -209,34 +267,11 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
           }
         }
         if (!moved || rand() < 0.05) g[p] = BLUE_FIRE
+        continue
       }
 
-      // PLASMA
-      else if (c === PLASMA) {
-        if (y === 0) { g[p] = EMPTY; continue }
-        if (rand() < 0.08) { g[p] = EMPTY; continue }
-        for (let i = 0; i < 3; i++) {
-          const dx = Math.floor(rand() * 3) - 1, dy = Math.floor(rand() * 3) - 1
-          if (dx === 0 && dy === 0) continue
-          const nx = x + dx, ny = y + dy
-          if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
-            const nc = g[idx(nx, ny)]
-            if (nc === SAND && rand() < 0.5) g[idx(nx, ny)] = PLASMA
-            else if ((nc === PLANT || nc === FLUFF || nc === GAS || nc === FLOWER) && rand() < 0.5) g[idx(nx, ny)] = FIRE
-          }
-        }
-        const up = idx(x, y - 1)
-        if (y > 0 && g[up] === EMPTY) { g[up] = PLASMA; g[p] = EMPTY }
-        else {
-          const dx = rand() < 0.5 ? -1 : 1
-          if (y > 0 && x + dx >= 0 && x + dx < cols && g[idx(x + dx, y - 1)] === EMPTY) {
-            g[idx(x + dx, y - 1)] = PLASMA; g[p] = EMPTY
-          }
-        }
-      }
-
-      // LIGHTNING
-      else if (c === LIGHTNING) {
+      // ── LIGHTNING (inline — downward strike) ──
+      if (c === LIGHTNING) {
         if (rand() < 0.2) { g[p] = rand() < 0.2 ? STATIC : EMPTY; continue }
         let struck = false
         for (let dist = 1; dist <= 3 && !struck; dist++) {
@@ -295,15 +330,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
             if (bx >= 0 && bx < cols && g[idx(bx, y)] === EMPTY) g[idx(bx, y)] = LIGHTNING
           }
         } else if (!struck) g[p] = EMPTY
-      }
-
-      // Creature handlers
-      else if (c === BIRD) {
-        updateBird(g, x, y, p, cols, rows, rand)
-      } else if (c === BEE) {
-        updateBee(g, x, y, p, cols, rows, rand)
-      } else if (c === FIREFLY) {
-        updateFirefly(g, x, y, p, cols, rows, rand)
+        continue
       }
     }
   }

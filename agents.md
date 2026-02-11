@@ -12,11 +12,15 @@ The build outputs to `/docs` folder which is deployed via GitHub Pages.
 
 ## Architecture
 
-The game uses a **hybrid bitECS + spatial grid** architecture:
+The game uses a **hybrid bitECS + spatial grid** architecture with **component-driven archetypes**:
 - Physics + rendering run in a **Web Worker** (`physics.worker.ts`) using OffscreenCanvas
 - The main thread (`App.tsx`) handles UI and sends input events via `postMessage`
-- The simulation grid is a flat `Uint8Array` where each byte is a particle type ID
+- The simulation grid (`typeGrid`) is a flat `Uint8Array` where each byte is a particle type ID — this is the **sole source of truth** for particle type identity (there is no per-entity type component)
 - Systems iterate the grid in row order (NOT via ECS queries) to preserve simulation correctness
+- Each particle type is defined as an **archetype** — a composition of reusable ECS components
+- Generic behaviors (gravity, liquid flow, buoyancy) are **data-driven** from archetype definitions
+- Complex/unique behaviors still use **handler tags** that dispatch to type-specific functions
+- A precomputed **`ARCHETYPE_FLAGS` bitmask array** enables fast flag-based dispatch per particle type
 
 ## Key Files
 
@@ -24,17 +28,19 @@ The game uses a **hybrid bitECS + spatial grid** architecture:
 - `/src/App.css` - UI styling
 - `/src/physics.worker.ts` - System orchestrator: game loop, input handling, calls physics + render systems
 - `/src/ecs/constants.ts` - Particle type IDs (0-65), color tables, `MATERIAL_TO_ID`, `CELL_SIZE`
-- `/src/ecs/components.ts` - bitECS component definitions (`Position`, `ParticleType`)
+- `/src/ecs/components.ts` - bitECS component definitions: Core (`Position`), Movement (`Gravity`, `Buoyancy`, `Liquid`, `Density`, `RandomWalk`), Visual (`Appearance`), Lifecycle (`Volatile`, `MeltOnHeat`), Reaction tags (`Flammable`, `HeatSource`, `Immobile`, `Living`, `KillsCreatures`), Parameterized (`Explosive`), Handler tags (`SpawnerHandler`, `CreatureHandler`, `GrowthHandler`, `CorrosiveHandler`, `InfectiousHandler`, `ProjectileHandler`, `LightningHandler`, `FireworkHandler`, `BubbleHandler`, `CometHandler`)
+- `/src/ecs/archetypes.ts` - `ArchetypeDef` interface, `ARCHETYPES[]` table (indexed by particle type ID), `ARCHETYPE_FLAGS` bitmask array for fast dispatch, flag bit constants (`F_GRAVITY`, `F_BUOYANCY`, etc.)
 - `/src/ecs/world.ts` - `GameWorld` type, `createGameWorld()`, `initGrid()`, `resetGrid()`
-- `/src/ecs/spatial.ts` - Grid helpers: `getEntityAt()`, `getTypeAt()`, `inBounds()`
-- `/src/ecs/lifecycle.ts` - Entity lifecycle: `spawnParticle`, `destroyParticle`, `moveParticle`, `swapParticles`, `setCell`
+- `/src/ecs/lifecycle.ts` - Entity lifecycle: `spawnParticle`, `destroyParticle`, `moveParticle`, `swapParticles`, `transformParticle`, `setCell` — applies/strips archetype components on spawn/transform; particle type identity comes from `typeGrid`, not a per-entity component
 - `/src/ecs/systems/render.ts` - Fills ImageData from typeGrid
 - `/src/ecs/systems/input.ts` - Processes user input events via ECS lifecycle
-- `/src/ecs/systems/rising.ts` - Rising pass (top-to-bottom): fire, gas, plasma, lightning, comet, bubbles, birds, bees, fireflies
-- `/src/ecs/systems/falling.ts` - Falling pass (bottom-to-top): dispatches to all subsystems below + inline sand/water/dirt/fluff/nitro/slime/gunpowder/honey/snow/poison
+- `/src/ecs/systems/rising.ts` - Rising pass (top-to-bottom): flag-based dispatch for projectiles and flying creatures; inline handlers for fire, gas, plasma, lightning, comet, bubbles, firework, spore, cloud
+- `/src/ecs/systems/falling.ts` - Falling pass (bottom-to-top): flag-based dispatch (`ARCHETYPE_FLAGS` + `HANDLER_MASK`) for spawners, ground creatures, corrosive, infectious, growth; inline handlers for nitro, gunpowder, slime, snow; generic `applyGravity`/`applyLiquid` for data-driven particles
+- `/src/ecs/systems/gravity.ts` - Generic gravity: fall into empty, density-sink through lighter liquids, diagonal slide — driven by `Gravity.chance` and `Density.value` from archetypes
+- `/src/ecs/systems/liquid.ts` - Generic lateral liquid flow — driven by `Liquid.chance` from archetypes
 - `/src/ecs/systems/creatures.ts` - 10 creature handlers: bird, bee, bug, ant, alien, firefly, worm, fairy, fish, moth
 - `/src/ecs/systems/spawners.ts` - 8 spawner handlers: tap, anthill, hive, nest, gun, volcano, star, black hole
-- `/src/ecs/systems/reactions.ts` - 6 reaction handlers: acid, lava, mold, mercury, void, rust
+- `/src/ecs/systems/reactions.ts` - 7 reaction handlers: acid, lava, mold, mercury, void, rust, poison
 - `/src/ecs/systems/growing.ts` - 3 growth handlers: plant, seed, algae
 - `/src/ecs/systems/effects.ts` - 6 effect handlers: quark, crystal, ember, static, dust, glitter
 - `/src/ecs/systems/projectiles.ts` - Bullet movement (rising/falling), bullet trail fading
@@ -53,6 +59,16 @@ Each system handler has the signature:
 (g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number) => void
 ```
 Where `g` is the grid, `(x,y)` are coordinates, `p` is the flat index, `cols`/`rows` are dimensions, `rand` is `Math.random`.
+
+### Dispatch strategy
+
+Both `fallingPhysicsSystem` and `risingPhysicsSystem` use `ARCHETYPE_FLAGS[particleType]` to decide what to do with each cell:
+
+1. **Skip check** — rising pass skips non-buoyant/non-lightning; falling pass skips buoyant/lightning
+2. **Handler-flag dispatch** — a `HANDLER_MASK` groups handler flags (`F_PROJECTILE | F_SPAWNER | F_CREATURE | F_CORROSIVE | F_INFECTIOUS | F_GROWTH`). If any bit matches, dispatch to the appropriate handler via `switch(type)`
+3. **Inline effects** — particles without handler flags (Quark, Crystal, Ember, Static, Dust, Glitter) are dispatched by direct type check
+4. **Inline complex** — particles with unique reaction+movement combos (Nitro, Gunpowder, Slime, Snow) are handled inline
+5. **Generic data-driven movement** — remaining particles use `applyGravity()` then `applyLiquid()`, which read `Gravity.chance`, `Density.value`, and `Liquid.chance` directly from the `ARCHETYPES` table
 
 ## Particle System
 
@@ -79,6 +95,55 @@ Some particles have custom spawn rules in `addParticles` (in `physics.worker.ts`
 - **Alien/Quark:** 8% spawn rate (very sparse)
 - **Mold/Spore:** 40% spawn rate
 
+## Component System (Archetypes)
+
+Each particle type is defined as an `ArchetypeDef` in `archetypes.ts`. Components fall into categories:
+
+### Movement components (data-driven)
+- `gravity: number` — probability of falling down each tick (0–1). Applied by `applyGravity()`
+- `buoyancy: number` — probability of rising up each tick (0–1). Handled in rising pass
+- `liquid: number` — probability of lateral flow when vertically blocked (0–1). Applied by `applyLiquid()`
+- `density: number` — higher-density particles sink through lower-density liquids
+- `randomWalk: number` — probability of random 8-directional movement
+
+### Visual
+- `color: number` — ABGR uint32 static color (from `COLORS_U32`)
+- `palette?: number` — animated color palette (0=static, 1=fire, 2=plasma, 3=lightning, 4=blue_fire)
+
+### Lifecycle
+- `volatile?: [chance, into]` — per-tick decay probability and type to transform into
+- `meltOnHeat?: typeId` — transforms into this type near heat sources
+
+### Reaction tags (zero-data boolean flags)
+- `flammable` — can be ignited by fire/plasma
+- `heatSource` — acts as heat source (fire, lava, plasma, etc.)
+- `immobile` — cannot move (stone, glass, spawners, etc.)
+- `living` — is a living creature
+- `killsCreatures` — kills living creatures on contact
+
+### Parameterized reactions
+- `explosive?: [radius, trigger]` — trigger: 0=heat-adjacent, 1=solid-contact
+
+### Handler tags (dispatch to type-specific functions)
+- `spawnerHandler` / `creatureHandler` / `growthHandler`
+- `corrosiveHandler` / `infectiousHandler` / `projectileHandler`
+- `lightningHandler` / `fireworkHandler` / `bubbleHandler` / `cometHandler`
+
+### Archetype examples
+```typescript
+// Simple data-driven: only needs gravity + density
+ARCHETYPES[SAND] = { gravity: 1.0, density: 5, color: COLORS_U32[SAND] }
+
+// Liquid: gravity + lateral flow + density
+ARCHETYPES[WATER] = { gravity: 1.0, liquid: 0.5, density: 2, color: COLORS_U32[WATER] }
+
+// Rising + volatile + heat source
+ARCHETYPES[FIRE] = { buoyancy: 0.5, volatile: [0.1, EMPTY], heatSource: true, color: COLORS_U32[FIRE], palette: 1 }
+
+// Handler-dispatched creature
+ARCHETYPES[BUG] = { living: true, creatureHandler: true, color: COLORS_U32[BUG] }
+```
+
 ## Adding New Particles
 
 1. Add constant in `src/ecs/constants.ts`: `export const NEW_PARTICLE = XX`
@@ -87,65 +152,78 @@ Some particles have custom spawn rules in `addParticles` (in `physics.worker.ts`
 4. Add color to `COLORS_U32` array at the matching index (ABGR format)
 5. Add button color to `BUTTON_COLORS` in `App.tsx` (if paintable)
 6. Add to `materials` array in `App.tsx` for button display (if paintable)
-7. Add physics handler in the appropriate system file:
-   - Rising particles: `src/ecs/systems/rising.ts`
-   - Falling granulars/liquids: inline in `src/ecs/systems/falling.ts`
+7. **Add archetype in `src/ecs/archetypes.ts`**: define the `ArchetypeDef` with appropriate components:
+   - **Data-driven only** (e.g., new granular/liquid): set `gravity`, `liquid`, `density`, etc. — no handler needed, generic `applyGravity`/`applyLiquid` handles movement automatically
+   - **Handler-dispatched** (e.g., new creature/spawner): set the handler tag (`creatureHandler: true`, etc.) and write a type-specific handler function
+8. If using a handler tag, add the physics handler in the appropriate system file:
    - Creatures: `src/ecs/systems/creatures.ts`
    - Spawners: `src/ecs/systems/spawners.ts`
    - Reactions: `src/ecs/systems/reactions.ts`
    - Growing: `src/ecs/systems/growing.ts`
    - Effects: `src/ecs/systems/effects.ts`
    - Projectiles: `src/ecs/systems/projectiles.ts`
-8. Wire the handler into `falling.ts` or `rising.ts` dispatch
-9. Add special spawn rate in `addParticles` if needed (in `physics.worker.ts`)
-10. Add to fire spreading list if flammable
-11. Update README.md with particle documentation
-12. Update mermaid.md with interaction diagrams
+9. Wire the handler into `falling.ts` or `rising.ts` dispatch `switch` statement
+10. Add special spawn rate in `addParticles` if needed (in `physics.worker.ts`)
+11. Add to fire spreading list if flammable
+12. Update README.md with particle documentation
+13. Update mermaid.md with interaction diagrams
 
 ## Adding Internal Particles (like Bullets)
 
 1. Add constants for variants in `constants.ts`
 2. Add colors to `COLORS_U32` for each variant
-3. Add physics handler in appropriate system file
-4. Wire handler into `rising.ts` or `falling.ts` dispatch
-5. Have parent particle spawn them (e.g., Gun spawns Bullets)
-6. Do NOT add to Material type, MATERIAL_TO_ID, BUTTON_COLORS, or materials array
+3. Add archetype in `archetypes.ts` (e.g., `{ projectileHandler: true, color: ... }`)
+4. Add physics handler in appropriate system file
+5. Wire handler into `rising.ts` or `falling.ts` dispatch
+6. Have parent particle spawn them (e.g., Gun spawns Bullets)
+7. Do NOT add to Material type, MATERIAL_TO_ID, BUTTON_COLORS, or materials array
 
 ## Common Patterns
 
+### Data-Driven Particle (no handler needed)
+Simple particles that only need movement can be defined purely via archetype — no handler function required:
+```typescript
+// In archetypes.ts — this is ALL you need for a basic granular solid:
+ARCHETYPES[NEW_SOLID] = { gravity: 0.8, density: 3, color: COLORS_U32[NEW_SOLID] }
+
+// Or a basic liquid:
+ARCHETYPES[NEW_LIQUID] = { gravity: 1.0, liquid: 0.5, density: 2, color: COLORS_U32[NEW_LIQUID] }
+```
+The `fallingPhysicsSystem` automatically calls `applyGravity()` and `applyLiquid()` for any particle with those flags.
+
 ### Spawner Pattern (Tap, Hive, Anthill, Nest, Gun, Volcano, Star, Black Hole)
 ```typescript
-export function updateSpawner(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
-  const idx = (x: number, y: number) => y * cols + x
-  // Check for fire - spawner burns
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      // fire check...
-    }
-  }
-  // Spawn at rate
-  if (rand() < 0.05) {
-    // spawn child particle nearby
-  }
+// Archetype: immobile + spawnerHandler
+ARCHETYPES[TAP] = { immobile: true, spawnerHandler: true, color: COLORS_U32[TAP] }
+
+// Handler in spawners.ts:
+export function updateTap(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+  // Check for fire — spawner burns
+  // Spawn child particle at rate
 }
 ```
 
 ### Creature Pattern (Bug, Ant, Bird, Bee, Firefly, Alien, Worm, Fairy, Fish, Moth)
 ```typescript
-export function updateCreature(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
-  const idx = (x: number, y: number) => y * cols + x
+// Archetype: living + creatureHandler
+ARCHETYPES[BUG] = { living: true, creatureHandler: true, color: COLORS_U32[BUG] }
+
+// Handler in creatures.ts:
+export function updateBug(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
   // Check for death conditions (fire, predators)
   // Movement logic
   // Eating/interaction logic
 }
 ```
 
-### Projectile Pattern (Bullets)
+### Entity Lifecycle (lifecycle.ts)
 ```typescript
-// Direction encoded in particle type (BULLET_N through BULLET_NW)
-// Move multiple cells per frame
-// Interact with targets (destroy, ignite, pass through)
-// Remove at boundaries
+spawnParticle(world, x, y, type)     // Creates entity, applies archetype components, updates grids
+destroyParticle(world, eid)           // Removes entity, clears grids
+moveParticle(world, eid, newX, newY)  // Updates position + grids
+swapParticles(world, eid1, eid2)      // Swaps positions of two entities
+transformParticle(world, eid, newType) // Strips old components, applies new archetype
+setCell(world, x, y, type)           // High-level: spawn, transform, or destroy as needed
 ```
 
 ## Protected Particles
