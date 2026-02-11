@@ -12,7 +12,7 @@ export function updateQuark(g: Uint8Array, x: number, y: number, p: number, cols
   }
 }
 
-export function updateCrystal(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+export function updateCrystal(g: Uint8Array, _x: number, _y: number, p: number, _cols: number, _rows: number, rand: () => number): void {
   if (rand() < 0.002) { g[p] = SAND }
 }
 

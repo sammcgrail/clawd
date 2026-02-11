@@ -7,7 +7,7 @@ import { EMPTY } from '../constants'
  * Returns true if the particle moved.
  */
 export function applyLiquid(
-  g: Uint8Array, x: number, y: number, p: number,
+  g: Uint8Array, x: number, _y: number, p: number,
   cols: number, type: number, rand: () => number
 ): boolean {
   const arch = ARCHETYPES[type]!

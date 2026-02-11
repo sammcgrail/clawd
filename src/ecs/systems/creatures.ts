@@ -1,7 +1,6 @@
 import { EMPTY, BUG, ANT, BIRD, BEE, FIREFLY, ALIEN, WORM, FAIRY, FISH, MOTH,
   FIRE, PLASMA, LIGHTNING, EMBER, LAVA, ACID, WATER, PLANT, FLOWER, DIRT, SAND,
-  FLUFF, SLIME, QUARK, GAS, CRYSTAL, STATIC, GLITTER, ALGAE, HONEY, STONE,
-  MOLD, SPORE, HIVE, NEST } from '../constants'
+  FLUFF, SLIME, QUARK, STATIC, GLITTER, ALGAE, HONEY, STONE } from '../constants'
 
 // ── Rising-pass creatures ───────────────────────────────────────────────
 

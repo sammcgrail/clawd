@@ -1,7 +1,7 @@
 import { EMPTY, WATER, PLANT, FLOWER, FIRE, PLASMA, LAVA, BUG, ANT, BIRD,
   SLIME, DIRT, SEED, STAR, GAS, ALGAE } from '../constants'
 
-export function updatePlant(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+export function updatePlant(g: Uint8Array, x: number, y: number, _p: number, cols: number, rows: number, rand: () => number): void {
   const idx = (x: number, y: number) => y * cols + x
   if (rand() < 0.92) return
   const pdx = Math.floor(rand() * 3) - 1

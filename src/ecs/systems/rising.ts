@@ -11,15 +11,24 @@ import {
 } from '../constants'
 import { updateBulletRising } from './projectiles'
 import { updateBird, updateBee, updateFirefly } from './creatures'
+import { type ChunkMap, CHUNK_SIZE, CHUNK_SHIFT } from '../../sim/ChunkMap'
 
-export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): void {
+export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, chunkMap: ChunkMap): void {
   const idx = (x: number, y: number) => y * cols + x
   const rand = Math.random
+  const { chunkCols, active } = chunkMap
 
   for (let y = 0; y < rows; y++) {
+    const chunkRow = y >> CHUNK_SHIFT
     const leftToRight = rand() < 0.5
-    for (let i = 0; i < cols; i++) {
-      const x = leftToRight ? i : cols - 1 - i
+    for (let cc = 0; cc < chunkCols; cc++) {
+      const chunkCol = leftToRight ? cc : chunkCols - 1 - cc
+      if (!active[chunkRow * chunkCols + chunkCol]) continue
+      const xStart = chunkCol << CHUNK_SHIFT
+      const xEnd = Math.min(xStart + CHUNK_SIZE, cols)
+      const span = xEnd - xStart
+      for (let xi = 0; xi < span; xi++) {
+      const x = leftToRight ? xStart + xi : xEnd - 1 - xi
       const p = y * cols + x
       const c = g[p]
       if (c === EMPTY) continue
@@ -332,6 +341,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number): 
         } else if (!struck) g[p] = EMPTY
         continue
       }
-    }
-  }
+      } // xi (cells within chunk)
+    } // cc (chunk columns)
+  } // y
 }

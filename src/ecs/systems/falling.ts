@@ -20,18 +20,27 @@ import { updatePlant, updateSeed, updateAlgae } from './growing'
 import { updateQuark, updateCrystal, updateEmber, updateStatic, updateDust, updateGlitter } from './effects'
 import { applyGravity } from './gravity'
 import { applyLiquid } from './liquid'
+import { type ChunkMap, CHUNK_SIZE, CHUNK_SHIFT } from '../../sim/ChunkMap'
 
 // Combined mask for particles that have handler flags (dispatched by flag group)
 const HANDLER_MASK = F_PROJECTILE | F_SPAWNER | F_CREATURE | F_CORROSIVE | F_INFECTIOUS | F_GROWTH
 
-export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number): void {
+export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, chunkMap: ChunkMap): void {
   const idx = (x: number, y: number) => y * cols + x
   const rand = Math.random
+  const { chunkCols, active } = chunkMap
 
   for (let y = rows - 2; y >= 0; y--) {
+    const chunkRow = y >> CHUNK_SHIFT
     const leftToRight = rand() < 0.5
-    for (let i = 0; i < cols; i++) {
-      const x = leftToRight ? i : cols - 1 - i
+    for (let cc = 0; cc < chunkCols; cc++) {
+      const chunkCol = leftToRight ? cc : chunkCols - 1 - cc
+      if (!active[chunkRow * chunkCols + chunkCol]) continue
+      const xStart = chunkCol << CHUNK_SHIFT
+      const xEnd = Math.min(xStart + CHUNK_SIZE, cols)
+      const span = xEnd - xStart
+      for (let xi = 0; xi < span; xi++) {
+      const x = leftToRight ? xStart + xi : xEnd - 1 - xi
       const p = y * cols + x
       const c = g[p]
       if (c === EMPTY) continue
@@ -245,6 +254,7 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number):
       if (!moved && (flags & F_LIQUID)) {
         applyLiquid(g, x, y, p, cols, c, rand)
       }
-    }
-  }
+      } // xi (cells within chunk)
+    } // cc (chunk columns)
+  } // y
 }

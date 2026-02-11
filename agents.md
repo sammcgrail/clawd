@@ -12,30 +12,35 @@ The build outputs to `/docs` folder which is deployed via GitHub Pages.
 
 ## Architecture
 
-The game uses a **hybrid bitECS + spatial grid** architecture with **component-driven archetypes**:
+The game uses a **chunked grid engine** with **component-driven archetypes**:
 - Physics + rendering run in a **Web Worker** (`physics.worker.ts`) using OffscreenCanvas
 - The main thread (`App.tsx`) handles UI and sends input events via `postMessage`
-- The simulation grid (`typeGrid`) is a flat `Uint8Array` where each byte is a particle type ID — this is the **sole source of truth** for particle type identity (there is no per-entity type component)
-- Systems iterate the grid in row order (NOT via ECS queries) to preserve simulation correctness
+- The simulation grid (`typeGrid`) is a flat `Uint8Array` where each byte is a particle type ID — this is the **sole source of truth** for particle type identity
+- The grid is subdivided into **64x64 chunks** (`ChunkMap`) that track activity and dirty state
+- **Sleeping chunks** (no changes for 60 ticks) are skipped by physics — only active chunks are processed
+- **Dirty-rect rendering** — only chunks with changes are re-rendered to the pixel buffer
+- Systems iterate the grid in row order, skipping sleeping chunk columns within each row
 - Each particle type is defined as an **archetype** — a composition of reusable ECS components
 - Generic behaviors (gravity, liquid flow, buoyancy) are **data-driven** from archetype definitions
 - Complex/unique behaviors still use **handler tags** that dispatch to type-specific functions
 - A precomputed **`ARCHETYPE_FLAGS` bitmask array** enables fast flag-based dispatch per particle type
+- Handler functions operate on the global grid directly — chunking is transparent to them
 
 ## Key Files
 
 - `/src/App.tsx` - React UI, material picker, brush controls, worker communication
 - `/src/App.css` - UI styling
-- `/src/physics.worker.ts` - System orchestrator: game loop, input handling, calls physics + render systems
+- `/src/physics.worker.ts` - System orchestrator: game loop, input handling, ChunkMap lifecycle, calls physics + render systems
+- `/src/sim/ChunkMap.ts` - Chunk subdivision (64x64), activity tracking, sleep/wake, dirty-rect management, checksum-based change detection
 - `/src/ecs/constants.ts` - Particle type IDs (0-65), color tables, `MATERIAL_TO_ID`, `CELL_SIZE`
 - `/src/ecs/components.ts` - bitECS component definitions: Core (`Position`), Movement (`Gravity`, `Buoyancy`, `Liquid`, `Density`, `RandomWalk`), Visual (`Appearance`), Lifecycle (`Volatile`, `MeltOnHeat`), Reaction tags (`Flammable`, `HeatSource`, `Immobile`, `Living`, `KillsCreatures`), Parameterized (`Explosive`), Handler tags (`SpawnerHandler`, `CreatureHandler`, `GrowthHandler`, `CorrosiveHandler`, `InfectiousHandler`, `ProjectileHandler`, `LightningHandler`, `FireworkHandler`, `BubbleHandler`, `CometHandler`)
 - `/src/ecs/archetypes.ts` - `ArchetypeDef` interface, `ARCHETYPES[]` table (indexed by particle type ID), `ARCHETYPE_FLAGS` bitmask array for fast dispatch, flag bit constants (`F_GRAVITY`, `F_BUOYANCY`, etc.)
 - `/src/ecs/world.ts` - `GameWorld` type, `createGameWorld()`, `initGrid()`, `resetGrid()`
 - `/src/ecs/lifecycle.ts` - Entity lifecycle: `spawnParticle`, `destroyParticle`, `moveParticle`, `swapParticles`, `transformParticle`, `setCell` — applies/strips archetype components on spawn/transform; particle type identity comes from `typeGrid`, not a per-entity component
-- `/src/ecs/systems/render.ts` - Fills ImageData from typeGrid
+- `/src/ecs/systems/render.ts` - Dirty-chunk-only rendering: fills ImageData only for chunks marked renderDirty
 - `/src/ecs/systems/input.ts` - Processes user input events via ECS lifecycle
-- `/src/ecs/systems/rising.ts` - Rising pass (top-to-bottom): flag-based dispatch for projectiles and flying creatures; inline handlers for fire, gas, plasma, lightning, comet, bubbles, firework, spore, cloud
-- `/src/ecs/systems/falling.ts` - Falling pass (bottom-to-top): flag-based dispatch (`ARCHETYPE_FLAGS` + `HANDLER_MASK`) for spawners, ground creatures, corrosive, infectious, growth; inline handlers for nitro, gunpowder, slime, snow; generic `applyGravity`/`applyLiquid` for data-driven particles
+- `/src/ecs/systems/rising.ts` - Rising pass (top-to-bottom, chunk-aware): flag-based dispatch for projectiles and flying creatures; inline handlers for fire, gas, plasma, lightning, comet, bubbles, firework, spore, cloud
+- `/src/ecs/systems/falling.ts` - Falling pass (bottom-to-top, chunk-aware): flag-based dispatch (`ARCHETYPE_FLAGS` + `HANDLER_MASK`) for spawners, ground creatures, corrosive, infectious, growth; inline handlers for nitro, gunpowder, slime, snow; generic `applyGravity`/`applyLiquid` for data-driven particles
 - `/src/ecs/systems/gravity.ts` - Generic gravity: fall into empty, density-sink through lighter liquids, diagonal slide — driven by `Gravity.chance` and `Density.value` from archetypes
 - `/src/ecs/systems/liquid.ts` - Generic lateral liquid flow — driven by `Liquid.chance` from archetypes
 - `/src/ecs/systems/creatures.ts` - 10 creature handlers: bird, bee, bug, ant, alien, firefly, worm, fairy, fish, moth
@@ -50,9 +55,10 @@ The game uses a **hybrid bitECS + spatial grid** architecture with **component-d
 
 ## System Pipeline (per physics step)
 
-1. `risingPhysicsSystem(grid, cols, rows)` - top-to-bottom iteration
-2. `fallingPhysicsSystem(grid, cols, rows)` - bottom-to-top iteration
-3. `renderSystem(typeGrid, cols, rows, data32, canvasWidth)` - fill pixel buffer
+1. `risingPhysicsSystem(grid, cols, rows, chunkMap)` - top-to-bottom, skips sleeping chunks
+2. `fallingPhysicsSystem(grid, cols, rows, chunkMap)` - bottom-to-top, skips sleeping chunks
+3. `chunkMap.updateActivity(grid)` - recompute checksums, detect changes, manage sleep/wake
+4. `renderSystem(typeGrid, cols, rows, data32, canvasWidth, chunkMap)` - render only dirty chunks
 
 Each system handler has the signature:
 ```typescript

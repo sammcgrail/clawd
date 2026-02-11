@@ -1,4 +1,4 @@
-// Physics Worker - bitECS system orchestrator
+// Physics Worker - system orchestrator
 // Runs physics simulation and rendering off the main thread
 // Uses OffscreenCanvas for GPU-accelerated rendering in the worker
 
@@ -7,6 +7,7 @@ import { CELL_SIZE, MATERIAL_TO_ID, type Material, EMPTY, STONE, TAP, GUN, BLACK
 import { risingPhysicsSystem } from './ecs/systems/rising'
 import { fallingPhysicsSystem } from './ecs/systems/falling'
 import { renderSystem } from './ecs/systems/render'
+import { ChunkMap } from './sim/ChunkMap'
 
 // Worker state
 let canvas: OffscreenCanvas | null = null
@@ -16,11 +17,13 @@ let grid: Uint8Array = new Uint8Array(0)
 let cols = 0, rows = 0
 let isPaused = false
 let pendingInputs: Array<{ x: number; y: number; tool: Material | 'erase'; brushSize: number }> = []
+const chunkMap = new ChunkMap()
 
 function initGrid(width: number, height: number) {
   cols = Math.floor(width / CELL_SIZE)
   rows = Math.floor(height / CELL_SIZE)
   grid = new Uint8Array(cols * rows)
+  chunkMap.init(cols, rows)
   if (ctx) {
     imageData = ctx.createImageData(width, height)
   }
@@ -36,6 +39,7 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
         grid[idx] = GUN
       }
     }
+    chunkMap.wakeRadius(cellX, cellY, 1)
     return
   }
 
@@ -58,12 +62,13 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
       }
     }
   }
+  chunkMap.wakeRadius(cellX, cellY, brushSize + 1)
 }
 
 function render() {
   if (!ctx || !imageData || !canvas) return
   const data32 = new Uint32Array(imageData.data.buffer)
-  renderSystem(grid, cols, rows, data32, canvas.width)
+  renderSystem(grid, cols, rows, data32, canvas.width, chunkMap)
   ctx.putImageData(imageData, 0, 0)
 }
 
@@ -85,8 +90,9 @@ function gameLoop(timestamp: number) {
   if (!isPaused) {
     physicsAccum += delta
     if (physicsAccum >= PHYSICS_STEP) {
-      risingPhysicsSystem(grid, cols, rows)
-      fallingPhysicsSystem(grid, cols, rows)
+      risingPhysicsSystem(grid, cols, rows, chunkMap)
+      fallingPhysicsSystem(grid, cols, rows, chunkMap)
+      chunkMap.updateActivity(grid)
       physicsAccum = Math.min(physicsAccum - PHYSICS_STEP, PHYSICS_STEP)
     }
   }
@@ -132,6 +138,7 @@ self.onmessage = (e: MessageEvent) => {
 
     case 'reset':
       grid.fill(0)
+      chunkMap.wakeAll()
       break
   }
 }

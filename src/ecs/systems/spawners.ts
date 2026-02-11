@@ -2,14 +2,14 @@ import {
   EMPTY, WATER, ANT, BEE, BIRD, LAVA, GAS, STONE, SNOW, EMBER,
   STATIC, GLITTER, PLANT, FLOWER, ALGAE, DIRT, MOLD,
   BULLET_N, BULLET_NE, BULLET_E, BULLET_SE, BULLET_S, BULLET_SW, BULLET_W, BULLET_NW,
-  VOLCANO, GUN, ANTHILL, HIVE, BLACK_HOLE, TAP, NEST
+  VOLCANO, GUN, ANTHILL, HIVE, BLACK_HOLE
 } from '../constants'
 
-export function updateTap(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+export function updateTap(g: Uint8Array, x: number, y: number, _p: number, cols: number, rows: number, rand: () => number): void {
   if (y < rows - 1 && g[(y+1)*cols+x] === EMPTY && rand() < 0.15) g[(y+1)*cols+x] = WATER
 }
 
-export function updateAnthill(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+export function updateAnthill(g: Uint8Array, x: number, y: number, _p: number, cols: number, rows: number, rand: () => number): void {
   if (rand() < 0.06) {
     const dx = Math.floor(rand() * 3) - 1
     const dy = Math.floor(rand() * 3) - 1
@@ -20,7 +20,7 @@ export function updateAnthill(g: Uint8Array, x: number, y: number, p: number, co
   }
 }
 
-export function updateHive(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+export function updateHive(g: Uint8Array, x: number, y: number, _p: number, cols: number, rows: number, rand: () => number): void {
   if (rand() < 0.035) {
     const dx = Math.floor(rand() * 3) - 1
     const dy = Math.floor(rand() * 3) - 1
@@ -31,7 +31,7 @@ export function updateHive(g: Uint8Array, x: number, y: number, p: number, cols:
   }
 }
 
-export function updateNest(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+export function updateNest(g: Uint8Array, x: number, y: number, _p: number, cols: number, rows: number, rand: () => number): void {
   if (rand() < 0.02) {
     const dx = Math.floor(rand() * 3) - 1
     const dy = -1
@@ -42,7 +42,7 @@ export function updateNest(g: Uint8Array, x: number, y: number, p: number, cols:
   }
 }
 
-export function updateGun(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+export function updateGun(g: Uint8Array, x: number, y: number, _p: number, cols: number, rows: number, rand: () => number): void {
   if (rand() < 0.08) {
     const bulletTypes = [BULLET_N, BULLET_NE, BULLET_E, BULLET_SE, BULLET_S, BULLET_SW, BULLET_W, BULLET_NW]
     const offsets: [number, number][] = [[0,-1], [1,-1], [1,0], [1,1], [0,1], [-1,1], [-1,0], [-1,-1]]
@@ -93,7 +93,7 @@ export function updateVolcano(g: Uint8Array, x: number, y: number, p: number, co
   }
 }
 
-export function updateStar(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+export function updateStar(g: Uint8Array, x: number, y: number, _p: number, cols: number, rows: number, rand: () => number): void {
   const idx = (x: number, y: number) => y * cols + x
   if (rand() < 0.12) {
     const angle = rand() * 6.28318
@@ -131,7 +131,7 @@ export function updateStar(g: Uint8Array, x: number, y: number, p: number, cols:
   }
 }
 
-export function updateBlackHole(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
+export function updateBlackHole(g: Uint8Array, x: number, y: number, _p: number, cols: number, rows: number, rand: () => number): void {
   const idx = (x: number, y: number) => y * cols + x
   if (rand() > 0.5) return
   const pullRadius = 10
