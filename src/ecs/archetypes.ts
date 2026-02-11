@@ -166,7 +166,7 @@ ARCHETYPES[BULLET_S] = { projectileHandler: true, color: COLORS_U32[BULLET_S] }
 ARCHETYPES[BULLET_SW] = { projectileHandler: true, color: COLORS_U32[BULLET_SW] }
 ARCHETYPES[BULLET_W] = { projectileHandler: true, color: COLORS_U32[BULLET_W] }
 ARCHETYPES[BULLET_NW] = { projectileHandler: true, color: COLORS_U32[BULLET_NW] }
-ARCHETYPES[BULLET_TRAIL] = { volatile: [0.3, EMPTY], color: COLORS_U32[BULLET_TRAIL] }
+ARCHETYPES[BULLET_TRAIL] = { projectileHandler: true, volatile: [0.3, EMPTY], color: COLORS_U32[BULLET_TRAIL] }
 
 // ---------------------------------------------------------------------------
 // ARCHETYPE_FLAGS  -- precomputed bitmask array for fast dispatch
