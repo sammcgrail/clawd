@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import './App.css'
-import { WORLD_COLS, WORLD_ROWS, DEFAULT_ZOOM, MIN_ZOOM, MAX_ZOOM } from './ecs/constants'
+import { WORLD_COLS, WORLD_ROWS, DEFAULT_ZOOM, MAX_ZOOM } from './ecs/constants'
 
 type Material = 'sand' | 'water' | 'dirt' | 'stone' | 'plant' | 'fire' | 'gas' | 'fluff' | 'bug' | 'plasma' | 'nitro' | 'glass' | 'lightning' | 'slime' | 'ant' | 'alien' | 'quark' | 'crystal' | 'ember' | 'static' | 'bird' | 'gunpowder' | 'tap' | 'anthill' | 'bee' | 'flower' | 'hive' | 'honey' | 'nest' | 'gun' | 'cloud' | 'acid' | 'lava' | 'snow' | 'volcano' | 'mold' | 'mercury' | 'void' | 'seed' | 'rust' | 'spore' | 'algae' | 'poison' | 'dust' | 'firework' | 'bubble' | 'glitter' | 'star' | 'comet' | 'blackhole' | 'firefly' | 'worm' | 'fairy' | 'fish' | 'moth'
 type Tool = Material | 'erase'
@@ -47,6 +47,7 @@ function App() {
   const camXRef = useRef(0)
   const camYRef = useRef(0)
   const zoomRef = useRef(DEFAULT_ZOOM)
+  const minZoomRef = useRef(1)
 
   // Pan state
   const isPanningRef = useRef(false)
@@ -144,6 +145,7 @@ function App() {
     canvas.height = height
 
     // Camera: center horizontally, align bottom of viewport to bottom of grid
+    minZoomRef.current = height / WORLD_ROWS
     const viewW = width / DEFAULT_ZOOM
     const viewH = height / DEFAULT_ZOOM
     camXRef.current = Math.max(0, (WORLD_COLS - viewW) / 2)
@@ -167,6 +169,7 @@ function App() {
       if (!container) return
       const width = container.clientWidth
       const height = container.clientHeight
+      minZoomRef.current = height / WORLD_ROWS
       worker.postMessage({ type: 'resize', data: { width, height } })
     }
 
@@ -302,7 +305,7 @@ function App() {
       const dist = Math.sqrt(dx * dx + dy * dy)
       if (pinchStartDistRef.current > 0) {
         const ratio = dist / pinchStartDistRef.current
-        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchStartZoomRef.current * ratio))
+        const newZoom = Math.max(minZoomRef.current, Math.min(MAX_ZOOM, pinchStartZoomRef.current * ratio))
 
         // Zoom anchored on original pinch midpoint
         const canvas = canvasRef.current
@@ -387,7 +390,7 @@ function App() {
 
     const oldZoom = zoomRef.current
     const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15
-    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom * factor))
+    const newZoom = Math.max(minZoomRef.current, Math.min(MAX_ZOOM, oldZoom * factor))
 
     // Keep world position under cursor fixed
     const worldX = camXRef.current + cursorPx / oldZoom

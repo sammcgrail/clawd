@@ -29,9 +29,10 @@ body,
   left: 0;
   right: 0;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   padding: 12px 16px;
-  gap: 12px;
+  gap: 8px 12px;
   z-index: 10;
   pointer-events: none;
   /* iOS safe area */
@@ -47,6 +48,7 @@ body,
 .material-dropdown {
   position: relative;
   flex-shrink: 0;
+  margin-right: 80px;
 }
 
 .material-dropdown-trigger {
