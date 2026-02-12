@@ -28,7 +28,7 @@ let worldData32: Uint32Array | null = null
 let grid: Uint8Array = new Uint8Array(0)
 let cols = 0, rows = 0
 let isPaused = false
-let pendingInputs: Array<{ x: number; y: number; tool: Material | 'erase'; brushSize: number }> = []
+let pendingInputs: Array<{ x: number; y: number; prevX: number; prevY: number; tool: Material | 'erase'; brushSize: number }> = []
 const chunkMap = new ChunkMap()
 let orcWorld: OrcWorld = createOrcWorld()
 let simConfigEid = -1
@@ -150,9 +150,21 @@ function gameLoop(timestamp: number) {
   const delta = Math.min(timestamp - lastUpdateTime, 100)
   lastUpdateTime = timestamp
 
-  // Process pending inputs
+  // Process pending inputs with line interpolation
   for (const input of pendingInputs) {
-    addParticles(input.x, input.y, input.tool, input.brushSize)
+    const dx = input.x - input.prevX
+    const dy = input.y - input.prevY
+    const steps = Math.max(Math.abs(dx), Math.abs(dy))
+    if (steps === 0) {
+      addParticles(input.x, input.y, input.tool, input.brushSize)
+    } else {
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps
+        const ix = Math.round(input.prevX + dx * t)
+        const iy = Math.round(input.prevY + dy * t)
+        addParticles(ix, iy, input.tool, input.brushSize)
+      }
+    }
   }
   pendingInputs = []
 
@@ -198,6 +210,8 @@ self.onmessage = (e: MessageEvent) => {
       pendingInputs.push({
         x: data.cellX,
         y: data.cellY,
+        prevX: data.prevX ?? data.cellX,
+        prevY: data.prevY ?? data.cellY,
         tool: data.tool,
         brushSize: data.brushSize
       })

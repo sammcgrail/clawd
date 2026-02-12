@@ -31,13 +31,17 @@ function App() {
   const [brushSize, setBrushSize] = useState(3)
   const [isPaused, setIsPaused] = useState(false)
   const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [resetArmed, setResetArmed] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const dropdownScrollRef = useRef(0)
+  const menuRef = useRef<HTMLDivElement>(null)
   const lastMaterialRef = useRef<Material>('sand')
   const dimensionsRef = useRef({ cols: WORLD_COLS, rows: WORLD_ROWS })
   const pointerPosRef = useRef<{ x: number; y: number } | null>(null)
   const toolRef = useRef<Tool>('sand')
   const brushSizeRef = useRef(3)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const lastDrawCellRef = useRef<{ x: number; y: number } | null>(null)
 
   // Camera state (main thread mirror for coordinate transform)
   const camXRef = useRef(0)
@@ -47,6 +51,14 @@ function App() {
   // Pan state
   const isPanningRef = useRef(false)
   const panStartRef = useRef({ x: 0, y: 0, camX: 0, camY: 0 })
+
+  // Pinch-to-zoom state
+  const activePtrsRef = useRef(new Map<number, { x: number; y: number }>())
+  const isPinchingRef = useRef(false)
+  const pinchStartDistRef = useRef(0)
+  const pinchStartZoomRef = useRef(DEFAULT_ZOOM)
+  const pinchMidRef = useRef({ x: 0, y: 0 })
+  const pinchCamStartRef = useRef({ camX: 0, camY: 0 })
 
   // Keep refs in sync with state
   useEffect(() => { toolRef.current = tool }, [tool])
@@ -94,15 +106,19 @@ function App() {
   const sendInput = useCallback((clientX: number, clientY: number) => {
     const pos = getCellPos(clientX, clientY)
     if (!pos || !workerRef.current) return
+    const prev = lastDrawCellRef.current
     workerRef.current.postMessage({
       type: 'input',
       data: {
         cellX: pos.x,
         cellY: pos.y,
+        prevX: prev ? prev.x : pos.x,
+        prevY: prev ? prev.y : pos.y,
         tool: toolRef.current,
         brushSize: brushSizeRef.current
       }
     })
+    lastDrawCellRef.current = pos
   }, [getCellPos])
 
 
@@ -182,10 +198,15 @@ function App() {
   }, [])
 
   const reset = useCallback(() => {
+    if (!resetArmed) {
+      setResetArmed(true)
+      return
+    }
+    setResetArmed(false)
     if (workerRef.current) {
       workerRef.current.postMessage({ type: 'reset' })
     }
-  }, [])
+  }, [resetArmed])
 
   const save = useCallback(() => {
     const worker = workerRef.current
@@ -225,6 +246,29 @@ function App() {
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
     setDropdownOpen(false)
+    setResetArmed(false)
+
+    const ptrs = activePtrsRef.current
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+
+    // Two fingers → pinch-zoom (cancel any drawing)
+    if (ptrs.size === 2) {
+      setIsDrawing(false)
+      pointerPosRef.current = null
+      isPanningRef.current = false
+      isPinchingRef.current = true
+
+      const [a, b] = [...ptrs.values()]
+      const dx = b.x - a.x, dy = b.y - a.y
+      pinchStartDistRef.current = Math.sqrt(dx * dx + dy * dy)
+      pinchStartZoomRef.current = zoomRef.current
+      pinchMidRef.current = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+      pinchCamStartRef.current = { camX: camXRef.current, camY: camYRef.current }
+      return
+    }
+
+    // If already pinching (3rd finger?), ignore
+    if (isPinchingRef.current) return
 
     // Right-click → pan
     if (e.button === 2) {
@@ -243,6 +287,44 @@ function App() {
   }, [sendInput])
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
+    const ptrs = activePtrsRef.current
+    if (ptrs.has(e.pointerId)) {
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    }
+
+    // Pinch-zoom
+    if (isPinchingRef.current && ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()]
+      const dx = b.x - a.x, dy = b.y - a.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (pinchStartDistRef.current > 0) {
+        const ratio = dist / pinchStartDistRef.current
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchStartZoomRef.current * ratio))
+
+        // Zoom anchored on original pinch midpoint
+        const canvas = canvasRef.current
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect()
+          const midPx = pinchMidRef.current.x - rect.left
+          const midPy = pinchMidRef.current.y - rect.top
+          const worldX = pinchCamStartRef.current.camX + midPx / pinchStartZoomRef.current
+          const worldY = pinchCamStartRef.current.camY + midPy / pinchStartZoomRef.current
+
+          // Pan: shift by how much the midpoint moved
+          const curMidX = (a.x + b.x) / 2
+          const curMidY = (a.y + b.y) / 2
+          const panDx = (curMidX - pinchMidRef.current.x) / newZoom
+          const panDy = (curMidY - pinchMidRef.current.y) / newZoom
+
+          camXRef.current = worldX - midPx / newZoom - panDx
+          camYRef.current = worldY - midPy / newZoom - panDy
+          zoomRef.current = newZoom
+          sendCamera()
+        }
+      }
+      return
+    }
+
     // Pan
     if (isPanningRef.current) {
       const dx = (e.clientX - panStartRef.current.x) / zoomRef.current
@@ -258,13 +340,23 @@ function App() {
     if (isDrawing) sendInput(e.clientX, e.clientY)
   }, [isDrawing, sendInput, sendCamera])
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    activePtrsRef.current.delete(e.pointerId)
+
+    if (isPinchingRef.current) {
+      if (activePtrsRef.current.size < 2) {
+        isPinchingRef.current = false
+      }
+      return
+    }
+
     if (isPanningRef.current) {
       isPanningRef.current = false
       return
     }
     setIsDrawing(false)
     pointerPosRef.current = null
+    lastDrawCellRef.current = null
   }, [])
 
   const handlePointerEnter = useCallback((e: React.PointerEvent) => {
@@ -317,7 +409,21 @@ function App() {
     }
   }, [dropdownOpen])
 
-  const materials: Tool[] = ['erase', 'sand', 'water', 'dirt', 'stone', 'plant', 'fire', 'gas', 'fluff', 'bug', 'plasma', 'nitro', 'glass', 'lightning', 'slime', 'ant', 'alien', 'quark', 'crystal', 'ember', 'static', 'bird', 'gunpowder', 'tap', 'anthill', 'bee', 'flower', 'hive', 'honey', 'nest', 'gun', 'cloud', 'acid', 'lava', 'snow', 'volcano', 'mold', 'mercury', 'void', 'seed', 'rust', 'spore', 'algae', 'poison', 'dust', 'firework', 'bubble', 'glitter', 'star', 'comet', 'blackhole', 'firefly', 'worm', 'fairy', 'fish', 'moth']
+  // Restore dropdown scroll position when it opens
+  useEffect(() => {
+    if (dropdownOpen && menuRef.current) {
+      menuRef.current.scrollTop = dropdownScrollRef.current
+    }
+  }, [dropdownOpen])
+
+  const categories: Array<{ label: string; items: Tool[] }> = [
+    { label: 'basic', items: ['erase', 'sand', 'water', 'dirt', 'stone', 'glass', 'snow', 'dust', 'fluff'] },
+    { label: 'fluid', items: ['slime', 'acid', 'lava', 'mercury', 'honey', 'poison', 'gas', 'bubble'] },
+    { label: 'energy', items: ['fire', 'ember', 'plasma', 'lightning', 'static', 'nitro', 'gunpowder', 'firework', 'quark', 'comet'] },
+    { label: 'nature', items: ['plant', 'seed', 'flower', 'algae', 'mold', 'spore', 'rust', 'crystal', 'void', 'glitter'] },
+    { label: 'spawner', items: ['tap', 'anthill', 'hive', 'nest', 'gun', 'volcano', 'cloud', 'star', 'blackhole'] },
+    { label: 'critter', items: ['bug', 'ant', 'bird', 'bee', 'firefly', 'worm', 'fish', 'moth', 'alien', 'fairy'] },
+  ]
 
   return (
     <div className="app">
@@ -342,7 +448,7 @@ function App() {
               : <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 4h4v16H6zm8 0h4v16h-4z" /></svg>
             }
           </button>
-          <button className="ctrl-btn reset" onClick={reset}>
+          <button className={`ctrl-btn reset ${resetArmed ? 'armed' : ''}`} onClick={reset}>
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" /></svg>
           </button>
           <button className="ctrl-btn save" onClick={save}>
@@ -352,6 +458,17 @@ function App() {
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" /></svg>
           </button>
           <input ref={fileInputRef} type="file" accept=".bin" onChange={handleFileLoad} style={{ display: 'none' }} />
+        </div>
+        <div
+          className="brush-size"
+          onWheel={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setBrushSize(prev => e.deltaY > 0 ? Math.max(1, prev - 1) : Math.min(30, prev + 1))
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r={Math.max(3, brushSize / 30 * 10)} /></svg>
+          <span>{brushSize}</span>
         </div>
         <div className="material-dropdown" ref={dropdownRef}>
           <button
@@ -366,16 +483,23 @@ function App() {
             </svg>
           </button>
           {dropdownOpen && (
-            <div className="material-dropdown-menu">
-              {materials.map((m) => (
-                <button
-                  key={m}
-                  className={`material-dropdown-item ${tool === m ? 'active' : ''}`}
-                  onClick={() => { if (m !== 'erase') lastMaterialRef.current = m as Material; setTool(m); setDropdownOpen(false) }}
-                >
-                  <span className="material-dot" style={{ background: BUTTON_COLORS[m] }} />
-                  <span>{m}</span>
-                </button>
+            <div className="material-dropdown-menu" ref={menuRef} onScroll={(e) => { dropdownScrollRef.current = e.currentTarget.scrollTop }}>
+              {categories.map((cat) => (
+                <div key={cat.label} className="material-category">
+                  <div className="material-category-label">{cat.label}</div>
+                  <div className="material-category-items">
+                    {cat.items.map((m) => (
+                      <button
+                        key={m}
+                        className={`material-dropdown-item ${tool === m ? 'active' : ''}`}
+                        onClick={() => { if (m !== 'erase') lastMaterialRef.current = m as Material; setTool(m); setDropdownOpen(false) }}
+                      >
+                        <span className="material-dot" style={{ background: BUTTON_COLORS[m] }} />
+                        <span>{m}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           )}
