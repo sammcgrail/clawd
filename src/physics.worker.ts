@@ -11,7 +11,7 @@ import { renderSystem } from './ecs/systems/render'
 import { ChunkMap } from './sim/ChunkMap'
 import {
   type OrcWorld, createOrcWorld, createEmitter, destroyEmitter,
-  destroyAllEmitters, getEmitterAt, isSpawnerType,
+  destroyAllEmitters, getEmitterAt, isSpawnerType, getAllEmitters,
   createSimConfigEntity, createCameraEntity, createToolEntity,
   SimConfig,
 } from './ecs/orchestration'
@@ -221,6 +221,81 @@ self.onmessage = (e: MessageEvent) => {
       // Reset world buffer to background
       if (worldData32) worldData32.fill(BG_COLOR)
       break
+
+    case 'save': {
+      // Binary format: "SAND" magic (4) + cols u16 (2) + rows u16 (2)
+      //   + grid data (cols*rows) + emitter count u32 (4)
+      //   + per emitter: x u16 (2) + y u16 (2) + typeId u8 (1)
+      const emitters = getAllEmitters()
+      const headerSize = 4 + 2 + 2  // magic + cols + rows
+      const emitterHeaderSize = 4   // count
+      const emitterDataSize = emitters.length * 5
+      const totalSize = headerSize + grid.length + emitterHeaderSize + emitterDataSize
+      const buf = new ArrayBuffer(totalSize)
+      const view = new DataView(buf)
+      const u8 = new Uint8Array(buf)
+
+      // Magic "SAND"
+      u8[0] = 0x53; u8[1] = 0x41; u8[2] = 0x4E; u8[3] = 0x44
+      view.setUint16(4, cols, true)
+      view.setUint16(6, rows, true)
+
+      // Grid data
+      u8.set(grid, headerSize)
+
+      // Emitters
+      let offset = headerSize + grid.length
+      view.setUint32(offset, emitters.length, true)
+      offset += 4
+      for (const em of emitters) {
+        view.setUint16(offset, em.x, true)
+        view.setUint16(offset + 2, em.y, true)
+        u8[offset + 4] = em.typeId
+        offset += 5
+      }
+
+      ;(self as unknown as Worker).postMessage({ type: 'saveData', data: buf }, [buf])
+      break
+    }
+
+    case 'load': {
+      const loadBuf = data.buffer as ArrayBuffer
+      const loadView = new DataView(loadBuf)
+      const loadU8 = new Uint8Array(loadBuf)
+
+      // Validate magic
+      if (loadU8[0] !== 0x53 || loadU8[1] !== 0x41 || loadU8[2] !== 0x4E || loadU8[3] !== 0x44) break
+      const loadCols = loadView.getUint16(4, true)
+      const loadRows = loadView.getUint16(6, true)
+      if (loadCols !== cols || loadRows !== rows) break
+
+      // Restore grid
+      const headerSize = 8
+      grid.set(loadU8.subarray(headerSize, headerSize + cols * rows))
+
+      // Restore emitters
+      destroyAllEmitters(orcWorld)
+      orcWorld = createOrcWorld()
+      simConfigEid = createSimConfigEntity(orcWorld)
+      createCameraEntity(orcWorld)
+      createToolEntity(orcWorld)
+      if (simConfigEid !== -1) SimConfig.paused[simConfigEid] = isPaused ? 1 : 0
+
+      let loadOffset = headerSize + cols * rows
+      const emitterCount = loadView.getUint32(loadOffset, true)
+      loadOffset += 4
+      for (let i = 0; i < emitterCount; i++) {
+        const ex = loadView.getUint16(loadOffset, true)
+        const ey = loadView.getUint16(loadOffset + 2, true)
+        const eType = loadU8[loadOffset + 4]
+        createEmitter(orcWorld, ex, ey, eType, cols)
+        loadOffset += 5
+      }
+
+      chunkMap.wakeAll()
+      if (worldData32) worldData32.fill(BG_COLOR)
+      break
+    }
   }
 }
 

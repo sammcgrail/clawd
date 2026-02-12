@@ -37,6 +37,7 @@ function App() {
   const pointerPosRef = useRef<{ x: number; y: number } | null>(null)
   const toolRef = useRef<Tool>('sand')
   const brushSizeRef = useRef(3)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Camera state (main thread mirror for coordinate transform)
   const camXRef = useRef(0)
@@ -186,6 +187,41 @@ function App() {
     }
   }, [])
 
+  const save = useCallback(() => {
+    const worker = workerRef.current
+    if (!worker) return
+    const handler = (e: MessageEvent) => {
+      if (e.data.type === 'saveData') {
+        worker.removeEventListener('message', handler)
+        const blob = new Blob([e.data.data], { type: 'application/octet-stream' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `sand-${Date.now().toString(36)}.bin`
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+    }
+    worker.addEventListener('message', handler)
+    worker.postMessage({ type: 'save' })
+  }, [])
+
+  const load = useCallback(() => {
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleFileLoad = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !workerRef.current) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const buffer = reader.result as ArrayBuffer
+      workerRef.current?.postMessage({ type: 'load', data: { buffer } }, [buffer])
+    }
+    reader.readAsArrayBuffer(file)
+    e.target.value = ''
+  }, [])
+
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault()
     setDropdownOpen(false)
@@ -309,6 +345,13 @@ function App() {
           <button className="ctrl-btn reset" onClick={reset}>
             <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" /></svg>
           </button>
+          <button className="ctrl-btn save" onClick={save}>
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" /></svg>
+          </button>
+          <button className="ctrl-btn load" onClick={load}>
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" /></svg>
+          </button>
+          <input ref={fileInputRef} type="file" accept=".bin" onChange={handleFileLoad} style={{ display: 'none' }} />
         </div>
         <div className="material-dropdown" ref={dropdownRef}>
           <button

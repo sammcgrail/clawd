@@ -91,6 +91,15 @@ export function isSpawnerType(typeId: number): boolean {
   return typeId > 0 && (ARCHETYPE_FLAGS[typeId] & F_SPAWNER) !== 0
 }
 
+/** Return all emitters as an array of {x, y, typeId} for serialization. */
+export function getAllEmitters(): Array<{ x: number; y: number; typeId: number }> {
+  const result: Array<{ x: number; y: number; typeId: number }> = []
+  for (const [, eid] of posToEntity) {
+    result.push({ x: EmitterPos.x[eid], y: EmitterPos.y[eid], typeId: EmitterConfig.typeId[eid] })
+  }
+  return result
+}
+
 // ═══════════════════════════════════════════════════════════════
 // Singleton entity creation
 // ═══════════════════════════════════════════════════════════════
