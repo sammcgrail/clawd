@@ -2,18 +2,14 @@
 // Runs physics simulation and rendering off the main thread
 // Uses two-canvas pipeline: world buffer (1px/cell) → GPU-scaled display canvas
 
-import { MATERIAL_TO_ID, type Material, EMPTY, STONE, TAP, GUN, BLACK_HOLE, CLOUD,
+import { MATERIAL_TO_ID, type Material, EMPTY, STONE, TAP, GUN, BLACK_HOLE,
   BIRD, BEE, FIREFLY, ANT, BUG, SLIME, ALIEN, QUARK, MOLD, SPORE,
   WORLD_COLS, WORLD_ROWS, DEFAULT_ZOOM, BG_COLOR } from './ecs/constants'
 import { risingPhysicsSystem } from './ecs/systems/rising'
 import { fallingPhysicsSystem } from './ecs/systems/falling'
 import { renderSystem } from './ecs/systems/render'
 import { ChunkMap } from './sim/ChunkMap'
-import {
-  createEmitter, destroyEmitter,
-  destroyAllEmitters, getEmitterAt, isSpawnerType, getAllEmitters,
-} from './ecs/orchestration'
-import { emitterSystem } from './ecs/systems/emitters'
+import { isSpawnerType } from './ecs/orchestration'
 
 // Worker state — display canvas (viewport-sized) + world canvas (1px/cell)
 let displayCanvas: OffscreenCanvas | null = null
@@ -54,7 +50,6 @@ function initGrid(displayWidth: number, displayHeight: number) {
   camY = Math.max(0, rows - viewH)
 
   chunkMap.init(cols, rows)
-  destroyAllEmitters()
 }
 
 function addParticles(cellX: number, cellY: number, tool: Material | 'erase', brushSize: number) {
@@ -64,9 +59,7 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
     if (cellX >= 0 && cellX < cols && cellY >= 0 && cellY < rows) {
       const idx = cellY * cols + cellX
       if (grid[idx] !== STONE && grid[idx] !== TAP && grid[idx] !== GUN && grid[idx] !== BLACK_HOLE) {
-        if (getEmitterAt(idx) !== undefined) destroyEmitter(idx)
         grid[idx] = GUN
-        createEmitter(cellX, cellY, GUN, cols)
       }
     }
     chunkMap.wakeRadius(cellX, cellY, 1)
@@ -86,15 +79,7 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
           else if (matId === MOLD || matId === SPORE) spawnChance = 0.6
           if ((tool === 'erase' || Math.random() > spawnChance) &&
               (tool === 'erase' || (grid[idx] !== STONE && grid[idx] !== TAP && grid[idx] !== BLACK_HOLE))) {
-            // Destroy old emitter if overwriting a spawner cell
-            if (getEmitterAt(idx) !== undefined) destroyEmitter(idx)
-
             grid[idx] = matId
-
-            // Create emitter if placing a spawner (but not CLOUD)
-            if (matId !== EMPTY && matId !== CLOUD && isSpawnerType(matId)) {
-              createEmitter(nx, ny, matId, cols)
-            }
           }
         }
       }
@@ -160,10 +145,9 @@ function gameLoop(timestamp: number) {
     physicsAccum += delta
     if (physicsAccum >= PHYSICS_STEP) {
       chunkMap.flipTick()
-      emitterSystem(grid, cols, rows, chunkMap)
       risingPhysicsSystem(grid, cols, rows, chunkMap)
       fallingPhysicsSystem(grid, cols, rows, chunkMap)
-      chunkMap.updateActivity(grid)
+      chunkMap.updateActivity(grid, isSpawnerType)
       physicsAccum = Math.min(physicsAccum - PHYSICS_STEP, PHYSICS_STEP)
     }
   }
@@ -217,21 +201,15 @@ self.onmessage = (e: MessageEvent) => {
 
     case 'reset':
       grid.fill(0)
-      destroyAllEmitters()
       chunkMap.wakeAll()
       // Reset world buffer to background
       if (worldData32) worldData32.fill(BG_COLOR)
       break
 
     case 'save': {
-      // Binary format: "SAND" magic (4) + cols u16 (2) + rows u16 (2)
-      //   + grid data (cols*rows) + emitter count u32 (4)
-      //   + per emitter: x u16 (2) + y u16 (2) + typeId u8 (1)
-      const emittersArr = getAllEmitters()
-      const headerSize = 4 + 2 + 2  // magic + cols + rows
-      const emitterHeaderSize = 4   // count
-      const emitterDataSize = emittersArr.length * 5
-      const totalSize = headerSize + grid.length + emitterHeaderSize + emitterDataSize
+      // Binary format: "SAND" magic (4) + cols u16 (2) + rows u16 (2) + grid data (cols*rows)
+      const headerSize = 4 + 2 + 2
+      const totalSize = headerSize + grid.length
       const buf = new ArrayBuffer(totalSize)
       const view = new DataView(buf)
       const u8 = new Uint8Array(buf)
@@ -243,17 +221,6 @@ self.onmessage = (e: MessageEvent) => {
 
       // Grid data
       u8.set(grid, headerSize)
-
-      // Emitters
-      let offset = headerSize + grid.length
-      view.setUint32(offset, emittersArr.length, true)
-      offset += 4
-      for (const em of emittersArr) {
-        view.setUint16(offset, em.x, true)
-        view.setUint16(offset + 2, em.y, true)
-        u8[offset + 4] = em.typeId
-        offset += 5
-      }
 
       ;(self as unknown as Worker).postMessage({ type: 'saveData', data: buf }, [buf])
       break
@@ -273,20 +240,6 @@ self.onmessage = (e: MessageEvent) => {
       // Restore grid
       const headerSize = 8
       grid.set(loadU8.subarray(headerSize, headerSize + cols * rows))
-
-      // Restore emitters
-      destroyAllEmitters()
-
-      let loadOffset = headerSize + cols * rows
-      const emitterCount = loadView.getUint32(loadOffset, true)
-      loadOffset += 4
-      for (let i = 0; i < emitterCount; i++) {
-        const ex = loadView.getUint16(loadOffset, true)
-        const ey = loadView.getUint16(loadOffset + 2, true)
-        const eType = loadU8[loadOffset + 4]
-        createEmitter(ex, ey, eType, cols)
-        loadOffset += 5
-      }
 
       chunkMap.wakeAll()
       if (worldData32) worldData32.fill(BG_COLOR)

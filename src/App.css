@@ -40,7 +40,7 @@ body,
   padding-right: max(16px, env(safe-area-inset-right));
 }
 
-.controls > * {
+.controls>* {
   pointer-events: auto;
 }
 
@@ -258,8 +258,9 @@ body,
   color: #aaa;
   font-size: 13px;
   font-weight: 600;
-  cursor: ns-resize;
+  cursor: ew-resize;
   user-select: none;
+  touch-action: none;
   -webkit-tap-highlight-color: transparent;
   transition: color 0.15s ease;
   flex-shrink: 0;

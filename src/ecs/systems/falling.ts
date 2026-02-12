@@ -1,7 +1,7 @@
 import {
   ARCHETYPE_FLAGS,
   F_PROJECTILE, F_CREATURE, F_CORROSIVE, F_INFECTIOUS,
-  F_GROWTH, F_BUOYANCY, F_LIGHTNING, F_GRAVITY, F_LIQUID, F_IMMOBILE,
+  F_GROWTH, F_BUOYANCY, F_LIGHTNING, F_GRAVITY, F_LIQUID, F_IMMOBILE, F_SPAWNER,
 } from '../archetypes'
 import {
   EMPTY, WATER, NITRO, SLIME, GUNPOWDER, SNOW,
@@ -10,18 +10,24 @@ import {
   BULLET_S, BULLET_SE, BULLET_SW, BULLET_TRAIL,
   MOLD, MERCURY, VOID, RUST, PLANT, SEED, ALGAE,
   POISON,
+  TAP, ANTHILL, HIVE, NEST, GUN, VOLCANO, STAR, BLACK_HOLE,
 } from '../constants'
 import { updateBug, updateAnt, updateAlien, updateWorm, updateFairy, updateFish, updateMoth } from './creatures'
 import { updateBulletFalling, updateBulletTrail } from './projectiles'
 import { updateAcid, updateLava, updateMold, updateMercury, updateVoid, updateRust, updatePoison } from './reactions'
 import { updatePlant, updateSeed, updateAlgae } from './growing'
 import { updateQuark, updateCrystal, updateEmber, updateStatic, updateDust, updateGlitter } from './effects'
+import {
+  updateTap, updateAnthill, updateHive, updateNest,
+  updateGun, updateVolcano, updateStar, updateBlackHole,
+  SPAWNER_WAKE_RADIUS,
+} from './spawners'
 import { applyGravity } from './gravity'
 import { applyLiquid } from './liquid'
 import { type ChunkMap, CHUNK_SIZE, CHUNK_SHIFT } from '../../sim/ChunkMap'
 
 // Combined mask for particles that have handler flags (dispatched by flag group)
-const HANDLER_MASK = F_PROJECTILE | F_CREATURE | F_CORROSIVE | F_INFECTIOUS | F_GROWTH
+const HANDLER_MASK = F_PROJECTILE | F_CREATURE | F_CORROSIVE | F_INFECTIOUS | F_GROWTH | F_SPAWNER
 
 export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, chunkMap: ChunkMap): void {
   const idx = (x: number, y: number) => y * cols + x
@@ -52,7 +58,19 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
 
       // ── Handler-flagged particles (flag-based dispatch) ──
       if (flags & HANDLER_MASK) {
-        if (flags & F_PROJECTILE) {
+        if (flags & F_SPAWNER) {
+          switch (c) {
+            case TAP:        updateTap(g, x, y, p, cols, rows, rand); break
+            case ANTHILL:    updateAnthill(g, x, y, p, cols, rows, rand); break
+            case HIVE:       updateHive(g, x, y, p, cols, rows, rand); break
+            case NEST:       updateNest(g, x, y, p, cols, rows, rand); break
+            case GUN:        updateGun(g, x, y, p, cols, rows, rand); break
+            case VOLCANO:    updateVolcano(g, x, y, p, cols, rows, rand); break
+            case STAR:       updateStar(g, x, y, p, cols, rows, rand); break
+            case BLACK_HOLE: updateBlackHole(g, x, y, p, cols, rows, rand); break
+          }
+          chunkMap.wakeRadius(x, y, SPAWNER_WAKE_RADIUS[c] ?? 2)
+        } else if (flags & F_PROJECTILE) {
           if (c === BULLET_S || c === BULLET_SE || c === BULLET_SW) {
             updateBulletFalling(g, x, y, p, c, cols, rows, leftToRight, rand)
           } else if (c === BULLET_TRAIL) {

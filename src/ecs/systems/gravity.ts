@@ -45,17 +45,16 @@ export function applyGravity(
 
   // 3. Diagonal slide (DIRT doesn't slide)
   if (type !== DIRT) {
-    const dx = rand() < 0.5 ? -1 : 1
-    if (x + dx >= 0 && x + dx < cols && g[below + dx] === EMPTY) {
+    const leftOk = x > 0 && g[below - 1] === EMPTY
+    const rightOk = x < cols - 1 && g[below + 1] === EMPTY
+    let dx = 0
+    if (leftOk && rightOk) dx = rand() < 0.5 ? -1 : 1
+    else if (leftOk) dx = -1
+    else if (rightOk) dx = 1
+    if (dx !== 0) {
       g[below + dx] = type
       g[p] = EMPTY
       stamp[below + dx] = tp
-      return true
-    }
-    if (x - dx >= 0 && x - dx < cols && g[below - dx] === EMPTY) {
-      g[below - dx] = type
-      g[p] = EMPTY
-      stamp[below - dx] = tp
       return true
     }
   }

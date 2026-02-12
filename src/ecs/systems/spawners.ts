@@ -2,8 +2,20 @@ import {
   EMPTY, WATER, ANT, BEE, BIRD, LAVA, GAS, STONE, SNOW, EMBER,
   STATIC, GLITTER, PLANT, FLOWER, ALGAE, DIRT, MOLD,
   BULLET_N, BULLET_NE, BULLET_E, BULLET_SE, BULLET_S, BULLET_SW, BULLET_W, BULLET_NW,
-  VOLCANO, GUN, ANTHILL, HIVE, BLACK_HOLE
+  TAP, VOLCANO, GUN, ANTHILL, HIVE, NEST, STAR, BLACK_HOLE
 } from '../constants'
+
+/** Per-spawner-type wake radius (grid cells). */
+export const SPAWNER_WAKE_RADIUS: Partial<Record<number, number>> = {
+  [TAP]: 2,
+  [ANTHILL]: 2,
+  [HIVE]: 2,
+  [NEST]: 2,
+  [GUN]: 2,
+  [VOLCANO]: 4,
+  [STAR]: 6,
+  [BLACK_HOLE]: 12,
+}
 
 export function updateTap(g: Uint8Array, x: number, y: number, _p: number, cols: number, rows: number, rand: () => number): void {
   if (y < rows - 1 && g[(y+1)*cols+x] === EMPTY && rand() < 0.15) g[(y+1)*cols+x] = WATER

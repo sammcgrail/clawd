@@ -52,6 +52,9 @@ function App() {
   const isPanningRef = useRef(false)
   const panStartRef = useRef({ x: 0, y: 0, camX: 0, camY: 0 })
 
+  // Brush-size drag state
+  const brushDragRef = useRef<{ startX: number; startSize: number } | null>(null)
+
   // Pinch-to-zoom state
   const activePtrsRef = useRef(new Map<number, { x: number; y: number }>())
   const isPinchingRef = useRef(false)
@@ -465,6 +468,21 @@ function App() {
             e.preventDefault()
             e.stopPropagation()
             setBrushSize(prev => e.deltaY > 0 ? Math.max(1, prev - 1) : Math.min(30, prev + 1))
+          }}
+          onPointerDown={(e) => {
+            (e.target as HTMLElement).setPointerCapture(e.pointerId)
+            brushDragRef.current = { startX: e.clientX, startSize: brushSizeRef.current }
+          }}
+          onPointerMove={(e) => {
+            const drag = brushDragRef.current
+            if (!drag) return
+            const dx = e.clientX - drag.startX
+            const steps = Math.round(dx / 8)
+            setBrushSize(Math.max(1, Math.min(30, drag.startSize + steps)))
+          }}
+          onPointerUp={(e) => {
+            (e.target as HTMLElement).releasePointerCapture(e.pointerId)
+            brushDragRef.current = null
           }}
         >
           <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r={Math.max(3, brushSize / 30 * 10)} /></svg>

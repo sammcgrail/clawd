@@ -77,8 +77,10 @@ export class ChunkMap {
   /**
    * After physics tick: recompute checksums for active chunks,
    * detect changes, manage sleep counters.
+   * @param isAlwaysActive — optional per-cell check; chunks containing
+   *   matching cells never sleep (used for spawner types).
    */
-  updateActivity(grid: Uint8Array): void {
+  updateActivity(grid: Uint8Array, isAlwaysActive?: (type: number) => boolean): void {
     const { chunkCols, chunkRows, cols, rows } = this
     for (let cy = 0; cy < chunkRows; cy++) {
       for (let cx = 0; cx < chunkCols; cx++) {
@@ -97,7 +99,11 @@ export class ChunkMap {
           const sc = this.sleepCounter[ci] + 1
           this.sleepCounter[ci] = sc > 255 ? 255 : sc
           if (sc >= SLEEP_THRESHOLD) {
-            this.active[ci] = 0
+            if (isAlwaysActive && this.chunkHasMatch(grid, cx, cy, isAlwaysActive)) {
+              this.sleepCounter[ci] = 0
+            } else {
+              this.active[ci] = 0
+            }
           }
         }
       }
@@ -130,5 +136,23 @@ export class ChunkMap {
       }
     }
     return sum
+  }
+
+  /** Check if any cell in a chunk matches the predicate */
+  private chunkHasMatch(
+    grid: Uint8Array, cx: number, cy: number,
+    check: (type: number) => boolean
+  ): boolean {
+    const xStart = cx << CHUNK_SHIFT
+    const yStart = cy << CHUNK_SHIFT
+    const xEnd = Math.min(xStart + CHUNK_SIZE, this.cols)
+    const yEnd = Math.min(yStart + CHUNK_SIZE, this.rows)
+    for (let y = yStart; y < yEnd; y++) {
+      const rowOff = y * this.cols
+      for (let x = xStart; x < xEnd; x++) {
+        if (check(grid[rowOff + x])) return true
+      }
+    }
+    return false
   }
 }

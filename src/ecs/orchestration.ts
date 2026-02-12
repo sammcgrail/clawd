@@ -1,60 +1,12 @@
-// Orchestration — manages emitter entities and grid utilities.
-// No ECS dependency; emitters are tracked in a plain Map.
+// Orchestration — grid utilities and spawner type detection.
 
 import { ARCHETYPE_FLAGS, F_SPAWNER } from './archetypes'
 import { CHUNK_SHIFT } from '../sim/ChunkMap'
 import type { ChunkMap } from '../sim/ChunkMap'
 
-// ═══════════════════════════════════════════════════════════════
-// Emitter storage
-// ═══════════════════════════════════════════════════════════════
-
-export interface Emitter {
-  x: number
-  y: number
-  typeId: number
-}
-
-/** Maps grid index (y * cols + x) → emitter data. */
-const emitters = new Map<number, Emitter>()
-
-export function getEmitterAt(gridIndex: number): Emitter | undefined {
-  return emitters.get(gridIndex)
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Emitter lifecycle
-// ═══════════════════════════════════════════════════════════════
-
-export function createEmitter(
-  x: number, y: number, typeId: number, cols: number
-): void {
-  emitters.set(y * cols + x, { x, y, typeId })
-}
-
-export function destroyEmitter(gridIndex: number): void {
-  emitters.delete(gridIndex)
-}
-
-export function destroyAllEmitters(): void {
-  emitters.clear()
-}
-
 /** Check if a particle type ID has the F_SPAWNER flag. */
 export function isSpawnerType(typeId: number): boolean {
   return typeId > 0 && (ARCHETYPE_FLAGS[typeId] & F_SPAWNER) !== 0
-}
-
-/** Return all emitters as an array of {x, y, typeId} for serialization. */
-export function getAllEmitters(): Array<{ x: number; y: number; typeId: number }> {
-  return [...emitters.values()]
-}
-
-/** Iterate all emitters (avoids allocation vs getAllEmitters). */
-export function forEachEmitter(
-  fn: (emitter: Emitter, gridIndex: number) => void
-): void {
-  emitters.forEach(fn)
 }
 
 // ═══════════════════════════════════════════════════════════════
