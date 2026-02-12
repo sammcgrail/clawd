@@ -1,9 +1,10 @@
 // Physics Worker - system orchestrator
 // Runs physics simulation and rendering off the main thread
-// Uses OffscreenCanvas for GPU-accelerated rendering in the worker
+// Uses two-canvas pipeline: world buffer (1px/cell) → GPU-scaled display canvas
 
-import { CELL_SIZE, MATERIAL_TO_ID, type Material, EMPTY, STONE, TAP, GUN, BLACK_HOLE, CLOUD,
-  BIRD, BEE, FIREFLY, ANT, BUG, SLIME, ALIEN, QUARK, MOLD, SPORE } from './ecs/constants'
+import { MATERIAL_TO_ID, type Material, EMPTY, STONE, TAP, GUN, BLACK_HOLE, CLOUD,
+  BIRD, BEE, FIREFLY, ANT, BUG, SLIME, ALIEN, QUARK, MOLD, SPORE,
+  WORLD_COLS, WORLD_ROWS, DEFAULT_ZOOM, BG_COLOR } from './ecs/constants'
 import { risingPhysicsSystem } from './ecs/systems/rising'
 import { fallingPhysicsSystem } from './ecs/systems/falling'
 import { renderSystem } from './ecs/systems/render'
@@ -16,10 +17,14 @@ import {
 } from './ecs/orchestration'
 import { emitterSystem } from './ecs/systems/emitters'
 
-// Worker state
-let canvas: OffscreenCanvas | null = null
-let ctx: OffscreenCanvasRenderingContext2D | null = null
-let imageData: ImageData | null = null
+// Worker state — display canvas (viewport-sized) + world canvas (1px/cell)
+let displayCanvas: OffscreenCanvas | null = null
+let displayCtx: OffscreenCanvasRenderingContext2D | null = null
+let worldCanvas: OffscreenCanvas | null = null
+let worldCtx: OffscreenCanvasRenderingContext2D | null = null
+let worldImageData: ImageData | null = null
+let worldData32: Uint32Array | null = null
+
 let grid: Uint8Array = new Uint8Array(0)
 let cols = 0, rows = 0
 let isPaused = false
@@ -28,10 +33,30 @@ const chunkMap = new ChunkMap()
 let orcWorld: OrcWorld = createOrcWorld()
 let simConfigEid = -1
 
-function initGrid(width: number, height: number) {
-  cols = Math.floor(width / CELL_SIZE)
-  rows = Math.floor(height / CELL_SIZE)
+// Camera state
+let camX = 0    // top-left world cell (float)
+let camY = 0
+let zoom = DEFAULT_ZOOM  // display pixels per world cell
+
+function initGrid(displayWidth: number, displayHeight: number) {
+  cols = WORLD_COLS
+  rows = WORLD_ROWS
   grid = new Uint8Array(cols * rows)
+
+  // World backing buffer (1px/cell)
+  worldCanvas = new OffscreenCanvas(cols, rows)
+  worldCtx = worldCanvas.getContext('2d')!
+  worldImageData = worldCtx.createImageData(cols, rows)
+  worldData32 = new Uint32Array(worldImageData.data.buffer)
+  worldData32.fill(BG_COLOR)
+
+  // Camera: center horizontally, align bottom of viewport to bottom of grid
+  zoom = DEFAULT_ZOOM
+  const viewW = displayWidth / zoom
+  const viewH = displayHeight / zoom
+  camX = Math.max(0, (cols - viewW) / 2)
+  camY = Math.max(0, rows - viewH)
+
   chunkMap.init(cols, rows)
 
   // Reset ECS world and create singletons
@@ -40,10 +65,6 @@ function initGrid(width: number, height: number) {
   simConfigEid = createSimConfigEntity(orcWorld)
   createCameraEntity(orcWorld)
   createToolEntity(orcWorld)
-
-  if (ctx) {
-    imageData = ctx.createImageData(width, height)
-  }
 }
 
 function addParticles(cellX: number, cellY: number, tool: Material | 'erase', brushSize: number) {
@@ -95,10 +116,29 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
 }
 
 function render() {
-  if (!ctx || !imageData || !canvas) return
-  const data32 = new Uint32Array(imageData.data.buffer)
-  renderSystem(grid, cols, rows, data32, canvas.width, chunkMap)
-  ctx.putImageData(imageData, 0, 0)
+  if (!displayCtx || !displayCanvas || !worldCtx || !worldCanvas || !worldImageData || !worldData32) return
+
+  // 1. Update world buffer with dirty chunks (1px/cell)
+  renderSystem(grid, cols, rows, worldData32, chunkMap)
+  worldCtx.putImageData(worldImageData, 0, 0)
+
+  // 2. Composite viewport to display canvas with GPU-scaled nearest-neighbor
+  const dw = displayCanvas.width, dh = displayCanvas.height
+  const viewW = dw / zoom, viewH = dh / zoom
+
+  // Clamp camera to world bounds
+  const maxCamX = Math.max(0, cols - viewW)
+  const maxCamY = Math.max(0, rows - viewH)
+  const cx = Math.max(0, Math.min(camX, maxCamX))
+  const cy = Math.max(0, Math.min(camY, maxCamY))
+
+  // Background fill (for edges when zoomed out past world)
+  displayCtx.fillStyle = '#1a1a1a'
+  displayCtx.fillRect(0, 0, dw, dh)
+
+  // Scaled draw — nearest-neighbor for crisp pixel art
+  displayCtx.imageSmoothingEnabled = false
+  displayCtx.drawImage(worldCanvas, cx, cy, viewW, viewH, 0, 0, dw, dh)
 }
 
 let lastUpdateTime = 0
@@ -138,19 +178,19 @@ self.onmessage = (e: MessageEvent) => {
 
   switch (type) {
     case 'init':
-      canvas = e.data.canvas as OffscreenCanvas
-      ctx = canvas.getContext('2d', { willReadFrequently: false })
-      initGrid(canvas.width, canvas.height)
+      displayCanvas = e.data.canvas as OffscreenCanvas
+      displayCtx = displayCanvas.getContext('2d')!
+      initGrid(displayCanvas.width, displayCanvas.height)
       lastUpdateTime = 0
       physicsAccum = 0
       requestAnimationFrame(gameLoop)
       break
 
     case 'resize':
-      if (canvas) {
-        canvas.width = data.width
-        canvas.height = data.height
-        initGrid(data.width, data.height)
+      if (displayCanvas) {
+        displayCanvas.width = data.width
+        displayCanvas.height = data.height
+        // No grid re-init — just update display dimensions
       }
       break
 
@@ -163,6 +203,12 @@ self.onmessage = (e: MessageEvent) => {
       })
       break
 
+    case 'camera':
+      camX = data.camX
+      camY = data.camY
+      zoom = data.zoom
+      break
+
     case 'pause':
       isPaused = data.paused
       if (simConfigEid !== -1) SimConfig.paused[simConfigEid] = data.paused ? 1 : 0
@@ -172,6 +218,8 @@ self.onmessage = (e: MessageEvent) => {
       grid.fill(0)
       destroyAllEmitters(orcWorld)
       chunkMap.wakeAll()
+      // Reset world buffer to background
+      if (worldData32) worldData32.fill(BG_COLOR)
       break
   }
 }

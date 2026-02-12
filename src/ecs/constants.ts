@@ -33,6 +33,12 @@ export const MATERIAL_TO_ID: Record<Material, number> = {
 
 export const CELL_SIZE = 4
 
+export const WORLD_COLS = 1600
+export const WORLD_ROWS = 1000
+export const DEFAULT_ZOOM = 4
+export const MIN_ZOOM = 1
+export const MAX_ZOOM = 16
+
 // Pre-calculate colors as ABGR uint32
 function hslToU32(h: number, s: number, l: number): number {
   s /= 100; l /= 100

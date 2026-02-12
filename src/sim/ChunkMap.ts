@@ -58,6 +58,8 @@ export class ChunkMap {
     const cyMax = Math.min(this.chunkRows - 1, (worldY + radius) >> CHUNK_SHIFT)
     for (let cy = cyMin; cy <= cyMax; cy++) {
       for (let cx = cxMin; cx <= cxMax; cx++) {
+        const ci = cy * this.chunkCols + cx
+        this.renderDirty[ci] = 1
         this.wakeChunk(cx, cy)
       }
     }
