@@ -20,6 +20,10 @@ export class ChunkMap {
   checksum!: Int32Array
   /** 1 = pixels need re-rendering */
   renderDirty!: Uint8Array
+  /** Per-cell tick stamp for double-move prevention */
+  stampGrid!: Uint8Array
+  /** Alternates 0/1 each physics step; stale stamps are automatically ignored */
+  tickParity = 0
 
   init(cols: number, rows: number): void {
     this.cols = cols
@@ -31,6 +35,8 @@ export class ChunkMap {
     this.sleepCounter = new Uint8Array(n)
     this.checksum = new Int32Array(n)
     this.renderDirty = new Uint8Array(n).fill(1)    // all need initial render
+    this.stampGrid = new Uint8Array(cols * rows)     // all zero initially
+    this.tickParity = 0
   }
 
   /** Wake a single chunk by chunk coordinates */
@@ -40,6 +46,9 @@ export class ChunkMap {
     this.active[ci] = 1
     this.sleepCounter[ci] = 0
   }
+
+  /** Flip tick parity before each physics step */
+  flipTick(): void { this.tickParity = this.tickParity ? 0 : 1 }
 
   /** Wake all chunks overlapping a circle in world-space */
   wakeRadius(worldX: number, worldY: number, radius: number): void {

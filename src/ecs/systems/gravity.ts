@@ -8,7 +8,8 @@ import { EMPTY, DIRT } from '../constants'
  */
 export function applyGravity(
   g: Uint8Array, x: number, y: number, p: number,
-  cols: number, rows: number, type: number, rand: () => number
+  cols: number, rows: number, type: number, rand: () => number,
+  stamp: Uint8Array, tp: number
 ): boolean {
   const arch = ARCHETYPES[type]!
 
@@ -25,6 +26,7 @@ export function applyGravity(
   if (belowType === EMPTY) {
     g[below] = type
     g[p] = EMPTY
+    stamp[below] = tp
     return true
   }
 
@@ -36,6 +38,7 @@ export function applyGravity(
       (ARCHETYPE_FLAGS[belowType] & F_LIQUID)) {
       g[below] = type
       g[p] = belowType
+      stamp[below] = tp
       return true
     }
   }
@@ -46,11 +49,13 @@ export function applyGravity(
     if (x + dx >= 0 && x + dx < cols && g[below + dx] === EMPTY) {
       g[below + dx] = type
       g[p] = EMPTY
+      stamp[below + dx] = tp
       return true
     }
     if (x - dx >= 0 && x - dx < cols && g[below - dx] === EMPTY) {
       g[below - dx] = type
       g[p] = EMPTY
+      stamp[below - dx] = tp
       return true
     }
   }

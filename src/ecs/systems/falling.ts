@@ -1,6 +1,6 @@
 import {
   ARCHETYPE_FLAGS,
-  F_PROJECTILE, F_SPAWNER, F_CREATURE, F_CORROSIVE, F_INFECTIOUS,
+  F_PROJECTILE, F_CREATURE, F_CORROSIVE, F_INFECTIOUS,
   F_GROWTH, F_BUOYANCY, F_LIGHTNING, F_GRAVITY, F_LIQUID, F_IMMOBILE,
 } from '../archetypes'
 import {
@@ -8,13 +8,11 @@ import {
   FIRE, GAS, PLASMA, EMBER, LAVA, GLASS, STONE, ACID,
   BUG, ANT, ALIEN, WORM, FAIRY, FISH, MOTH, QUARK, CRYSTAL, STATIC, DUST, GLITTER,
   BULLET_S, BULLET_SE, BULLET_SW, BULLET_TRAIL,
-  TAP, ANTHILL, HIVE, NEST, GUN, VOLCANO, STAR, BLACK_HOLE,
   MOLD, MERCURY, VOID, RUST, PLANT, SEED, ALGAE,
   POISON,
 } from '../constants'
 import { updateBug, updateAnt, updateAlien, updateWorm, updateFairy, updateFish, updateMoth } from './creatures'
 import { updateBulletFalling, updateBulletTrail } from './projectiles'
-import { updateTap, updateAnthill, updateHive, updateNest, updateGun, updateVolcano, updateStar, updateBlackHole } from './spawners'
 import { updateAcid, updateLava, updateMold, updateMercury, updateVoid, updateRust, updatePoison } from './reactions'
 import { updatePlant, updateSeed, updateAlgae } from './growing'
 import { updateQuark, updateCrystal, updateEmber, updateStatic, updateDust, updateGlitter } from './effects'
@@ -23,12 +21,12 @@ import { applyLiquid } from './liquid'
 import { type ChunkMap, CHUNK_SIZE, CHUNK_SHIFT } from '../../sim/ChunkMap'
 
 // Combined mask for particles that have handler flags (dispatched by flag group)
-const HANDLER_MASK = F_PROJECTILE | F_SPAWNER | F_CREATURE | F_CORROSIVE | F_INFECTIOUS | F_GROWTH
+const HANDLER_MASK = F_PROJECTILE | F_CREATURE | F_CORROSIVE | F_INFECTIOUS | F_GROWTH
 
 export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, chunkMap: ChunkMap): void {
   const idx = (x: number, y: number) => y * cols + x
   const rand = Math.random
-  const { chunkCols, active } = chunkMap
+  const { chunkCols, active, stampGrid, tickParity } = chunkMap
 
   for (let y = rows - 2; y >= 0; y--) {
     const chunkRow = y >> CHUNK_SHIFT
@@ -44,6 +42,7 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
       const p = y * cols + x
       const c = g[p]
       if (c === EMPTY) continue
+      if (stampGrid[p] === tickParity) continue
 
       const flags = ARCHETYPE_FLAGS[c]
 
@@ -60,17 +59,6 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
             updateBulletTrail(g, p, rand)
           }
           // Other bullet directions handled in rising pass
-        } else if (flags & F_SPAWNER) {
-          switch (c) {
-            case TAP: updateTap(g, x, y, p, cols, rows, rand); break
-            case ANTHILL: updateAnthill(g, x, y, p, cols, rows, rand); break
-            case HIVE: updateHive(g, x, y, p, cols, rows, rand); break
-            case NEST: updateNest(g, x, y, p, cols, rows, rand); break
-            case GUN: updateGun(g, x, y, p, cols, rows, rand); break
-            case VOLCANO: updateVolcano(g, x, y, p, cols, rows, rand); break
-            case STAR: updateStar(g, x, y, p, cols, rows, rand); break
-            case BLACK_HOLE: updateBlackHole(g, x, y, p, cols, rows, rand); break
-          }
         } else if (flags & F_CREATURE) {
           // Skip flying creatures (handled in rising pass)
           switch (c) {
@@ -143,15 +131,15 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
           continue
         }
         if (g[p] !== NITRO) continue
-        if (belowCell === EMPTY) { g[below] = NITRO; g[p] = EMPTY }
-        else if (belowCell === WATER) { g[below] = NITRO; g[p] = WATER }
+        if (belowCell === EMPTY) { g[below] = NITRO; g[p] = EMPTY; stampGrid[below] = tickParity }
+        else if (belowCell === WATER) { g[below] = NITRO; g[p] = WATER; stampGrid[below] = tickParity }
         else {
           const dx = rand() < 0.5 ? -1 : 1
           const nx1 = x + dx, nx2 = x - dx
-          if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y + 1)] === EMPTY) { g[idx(nx1, y + 1)] = NITRO; g[p] = EMPTY }
-          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y + 1)] === EMPTY) { g[idx(nx2, y + 1)] = NITRO; g[p] = EMPTY }
-          else if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y)] === EMPTY) { g[idx(nx1, y)] = NITRO; g[p] = EMPTY }
-          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y)] === EMPTY) { g[idx(nx2, y)] = NITRO; g[p] = EMPTY }
+          if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y + 1)] === EMPTY) { const d = idx(nx1, y + 1); g[d] = NITRO; g[p] = EMPTY; stampGrid[d] = tickParity }
+          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y + 1)] === EMPTY) { const d = idx(nx2, y + 1); g[d] = NITRO; g[p] = EMPTY; stampGrid[d] = tickParity }
+          else if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y)] === EMPTY) { const d = idx(nx1, y); g[d] = NITRO; g[p] = EMPTY; stampGrid[d] = tickParity }
+          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y)] === EMPTY) { const d = idx(nx2, y); g[d] = NITRO; g[p] = EMPTY; stampGrid[d] = tickParity }
         }
         continue
       }
@@ -182,13 +170,13 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
           }
         }
         if (g[p] !== GUNPOWDER) continue
-        if (belowCell === EMPTY) { g[below] = GUNPOWDER; g[p] = EMPTY }
-        else if (belowCell === WATER) { g[below] = GUNPOWDER; g[p] = WATER }
+        if (belowCell === EMPTY) { g[below] = GUNPOWDER; g[p] = EMPTY; stampGrid[below] = tickParity }
+        else if (belowCell === WATER) { g[below] = GUNPOWDER; g[p] = WATER; stampGrid[below] = tickParity }
         else {
           const dx = rand() < 0.5 ? -1 : 1
           const nx1 = x + dx, nx2 = x - dx
-          if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y + 1)] === EMPTY) { g[idx(nx1, y + 1)] = GUNPOWDER; g[p] = EMPTY }
-          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y + 1)] === EMPTY) { g[idx(nx2, y + 1)] = GUNPOWDER; g[p] = EMPTY }
+          if (nx1 >= 0 && nx1 < cols && g[idx(nx1, y + 1)] === EMPTY) { const d = idx(nx1, y + 1); g[d] = GUNPOWDER; g[p] = EMPTY; stampGrid[d] = tickParity }
+          else if (nx2 >= 0 && nx2 < cols && g[idx(nx2, y + 1)] === EMPTY) { const d = idx(nx2, y + 1); g[d] = GUNPOWDER; g[p] = EMPTY; stampGrid[d] = tickParity }
         }
         continue
       }
@@ -206,12 +194,12 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
         }
         if (g[p] !== SLIME) continue
         if (rand() < 0.6) continue
-        if (belowCell === EMPTY) { g[below] = SLIME; g[p] = EMPTY }
+        if (belowCell === EMPTY) { g[below] = SLIME; g[p] = EMPTY; stampGrid[below] = tickParity }
         else {
           const dx = rand() < 0.5 ? -1 : 1
           const nx = x + dx
-          if (nx >= 0 && nx < cols && g[idx(nx, y + 1)] === EMPTY) { g[idx(nx, y + 1)] = SLIME; g[p] = EMPTY }
-          else if (nx >= 0 && nx < cols && g[idx(nx, y)] === EMPTY && rand() < 0.3) { g[idx(nx, y)] = SLIME; g[p] = EMPTY }
+          if (nx >= 0 && nx < cols && g[idx(nx, y + 1)] === EMPTY) { const d = idx(nx, y + 1); g[d] = SLIME; g[p] = EMPTY; stampGrid[d] = tickParity }
+          else if (nx >= 0 && nx < cols && g[idx(nx, y)] === EMPTY && rand() < 0.3) { const d = idx(nx, y); g[d] = SLIME; g[p] = EMPTY; stampGrid[d] = tickParity }
         }
         continue
       }
@@ -233,11 +221,11 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
           }
         }
         if (melted) continue
-        if (rand() < 0.25 && belowCell === EMPTY) { g[below] = SNOW; g[p] = EMPTY }
+        if (rand() < 0.25 && belowCell === EMPTY) { g[below] = SNOW; g[p] = EMPTY; stampGrid[below] = tickParity }
         else if (rand() < 0.1) {
           const sdx = rand() < 0.5 ? -1 : 1
           if (x + sdx >= 0 && x + sdx < cols && g[idx(x + sdx, y + 1)] === EMPTY) {
-            g[idx(x + sdx, y + 1)] = SNOW; g[p] = EMPTY
+            const d = idx(x + sdx, y + 1); g[d] = SNOW; g[p] = EMPTY; stampGrid[d] = tickParity
           }
         }
         continue
@@ -249,10 +237,10 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
       // ── Generic movement (SAND, WATER, DIRT, FLUFF, HONEY) ──
       let moved = false
       if (flags & F_GRAVITY) {
-        moved = applyGravity(g, x, y, p, cols, rows, c, rand)
+        moved = applyGravity(g, x, y, p, cols, rows, c, rand, stampGrid, tickParity)
       }
       if (!moved && (flags & F_LIQUID)) {
-        applyLiquid(g, x, y, p, cols, c, rand)
+        applyLiquid(g, x, y, p, cols, c, rand, stampGrid, tickParity)
       }
       } // xi (cells within chunk)
     } // cc (chunk columns)

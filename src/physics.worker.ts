@@ -2,12 +2,19 @@
 // Runs physics simulation and rendering off the main thread
 // Uses OffscreenCanvas for GPU-accelerated rendering in the worker
 
-import { CELL_SIZE, MATERIAL_TO_ID, type Material, EMPTY, STONE, TAP, GUN, BLACK_HOLE,
+import { CELL_SIZE, MATERIAL_TO_ID, type Material, EMPTY, STONE, TAP, GUN, BLACK_HOLE, CLOUD,
   BIRD, BEE, FIREFLY, ANT, BUG, SLIME, ALIEN, QUARK, MOLD, SPORE } from './ecs/constants'
 import { risingPhysicsSystem } from './ecs/systems/rising'
 import { fallingPhysicsSystem } from './ecs/systems/falling'
 import { renderSystem } from './ecs/systems/render'
 import { ChunkMap } from './sim/ChunkMap'
+import {
+  type OrcWorld, createOrcWorld, createEmitter, destroyEmitter,
+  destroyAllEmitters, getEmitterAt, isSpawnerType,
+  createSimConfigEntity, createCameraEntity, createToolEntity,
+  SimConfig,
+} from './ecs/orchestration'
+import { emitterSystem } from './ecs/systems/emitters'
 
 // Worker state
 let canvas: OffscreenCanvas | null = null
@@ -18,12 +25,22 @@ let cols = 0, rows = 0
 let isPaused = false
 let pendingInputs: Array<{ x: number; y: number; tool: Material | 'erase'; brushSize: number }> = []
 const chunkMap = new ChunkMap()
+let orcWorld: OrcWorld = createOrcWorld()
+let simConfigEid = -1
 
 function initGrid(width: number, height: number) {
   cols = Math.floor(width / CELL_SIZE)
   rows = Math.floor(height / CELL_SIZE)
   grid = new Uint8Array(cols * rows)
   chunkMap.init(cols, rows)
+
+  // Reset ECS world and create singletons
+  destroyAllEmitters(orcWorld)
+  orcWorld = createOrcWorld()
+  simConfigEid = createSimConfigEntity(orcWorld)
+  createCameraEntity(orcWorld)
+  createToolEntity(orcWorld)
+
   if (ctx) {
     imageData = ctx.createImageData(width, height)
   }
@@ -36,7 +53,10 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
     if (cellX >= 0 && cellX < cols && cellY >= 0 && cellY < rows) {
       const idx = cellY * cols + cellX
       if (grid[idx] !== STONE && grid[idx] !== TAP && grid[idx] !== GUN && grid[idx] !== BLACK_HOLE) {
+        const oldEid = getEmitterAt(idx)
+        if (oldEid !== undefined) destroyEmitter(orcWorld, oldEid, cols)
         grid[idx] = GUN
+        createEmitter(orcWorld, cellX, cellY, GUN, cols)
       }
     }
     chunkMap.wakeRadius(cellX, cellY, 1)
@@ -56,7 +76,16 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
           else if (matId === MOLD || matId === SPORE) spawnChance = 0.6
           if ((tool === 'erase' || Math.random() > spawnChance) &&
               (tool === 'erase' || (grid[idx] !== STONE && grid[idx] !== TAP && grid[idx] !== BLACK_HOLE))) {
+            // Destroy old emitter entity if overwriting a spawner cell
+            const oldEid = getEmitterAt(idx)
+            if (oldEid !== undefined) destroyEmitter(orcWorld, oldEid, cols)
+
             grid[idx] = matId
+
+            // Create emitter entity if placing a spawner (but not CLOUD)
+            if (matId !== EMPTY && matId !== CLOUD && isSpawnerType(matId)) {
+              createEmitter(orcWorld, nx, ny, matId, cols)
+            }
           }
         }
       }
@@ -90,6 +119,8 @@ function gameLoop(timestamp: number) {
   if (!isPaused) {
     physicsAccum += delta
     if (physicsAccum >= PHYSICS_STEP) {
+      chunkMap.flipTick()
+      emitterSystem(orcWorld, grid, cols, rows, chunkMap)
       risingPhysicsSystem(grid, cols, rows, chunkMap)
       fallingPhysicsSystem(grid, cols, rows, chunkMap)
       chunkMap.updateActivity(grid)
@@ -134,10 +165,12 @@ self.onmessage = (e: MessageEvent) => {
 
     case 'pause':
       isPaused = data.paused
+      if (simConfigEid !== -1) SimConfig.paused[simConfigEid] = data.paused ? 1 : 0
       break
 
     case 'reset':
       grid.fill(0)
+      destroyAllEmitters(orcWorld)
       chunkMap.wakeAll()
       break
   }

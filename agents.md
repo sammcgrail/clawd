@@ -84,6 +84,36 @@ Both `fallingPhysicsSystem` and `risingPhysicsSystem` use `ARCHETYPE_FLAGS[parti
 - Use `rand()` for probabilistic physics
 - Each row randomizes left-to-right vs right-to-left iteration
 
+## Chunking System (`src/sim/ChunkMap.ts`)
+
+The grid is divided into 64x64 chunks for spatial optimization:
+
+- **CHUNK_SIZE = 64**, **CHUNK_SHIFT = 6** (for bitwise `>> 6` division)
+- `chunkCols = ceil(cols / 64)`, `chunkRows = ceil(rows / 64)`
+- Chunk metadata is stored as flat typed arrays (not per-chunk objects)
+
+### Activity tracking
+- After each physics tick, `updateActivity()` computes a position-mixed checksum of each active chunk's cells
+- If the checksum matches the previous tick, `sleepCounter` increments
+- After **60 ticks** of no change (`SLEEP_THRESHOLD`), the chunk is put to sleep (`active = 0`)
+- When a chunk changes, its 8 neighbors are also woken (conservative — handles cross-boundary writes)
+
+### Wake triggers
+- `wakeRadius(worldX, worldY, radius)` — called on user input (brush painting)
+- `wakeAll()` — called on grid reset
+- Neighbor wake — when any chunk's checksum changes, adjacent chunks are woken
+
+### Dirty rendering
+- `renderDirty` flag per chunk — set when checksum changes, cleared after rendering
+- `renderSystem` skips chunks where `renderDirty = 0`
+- On init/resize, all chunks are marked renderDirty
+
+### How physics systems use chunks
+- Row-major iteration is preserved (bottom-to-top for falling, top-to-bottom for rising)
+- Within each row, chunk columns are iterated; sleeping chunks are skipped entirely
+- Handler functions are unaware of chunks — they index the global grid directly
+- Cross-chunk writes happen naturally; `updateActivity()` detects them via checksums
+
 ## Internal (Non-Paintable) Particles
 
 Some particles are internal and NOT added to Material type or materials array:

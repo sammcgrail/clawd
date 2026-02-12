@@ -8,7 +8,8 @@ import { EMPTY } from '../constants'
  */
 export function applyLiquid(
   g: Uint8Array, x: number, _y: number, p: number,
-  cols: number, type: number, rand: () => number
+  cols: number, type: number, rand: () => number,
+  stamp: Uint8Array, tp: number
 ): boolean {
   const arch = ARCHETYPES[type]!
 
@@ -19,11 +20,13 @@ export function applyLiquid(
   if (x + dx >= 0 && x + dx < cols && g[p + dx] === EMPTY) {
     g[p + dx] = type
     g[p] = EMPTY
+    stamp[p + dx] = tp
     return true
   }
   if (x - dx >= 0 && x - dx < cols && g[p - dx] === EMPTY) {
     g[p - dx] = type
     g[p] = EMPTY
+    stamp[p - dx] = tp
     return true
   }
 

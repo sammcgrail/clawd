@@ -16,7 +16,7 @@ import { type ChunkMap, CHUNK_SIZE, CHUNK_SHIFT } from '../../sim/ChunkMap'
 export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, chunkMap: ChunkMap): void {
   const idx = (x: number, y: number) => y * cols + x
   const rand = Math.random
-  const { chunkCols, active } = chunkMap
+  const { chunkCols, active, stampGrid, tickParity } = chunkMap
 
   for (let y = 0; y < rows; y++) {
     const chunkRow = y >> CHUNK_SHIFT
@@ -32,6 +32,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
       const p = y * cols + x
       const c = g[p]
       if (c === EMPTY) continue
+      if (stampGrid[p] === tickParity) continue
 
       const flags = ARCHETYPE_FLAGS[c]
 
@@ -70,11 +71,11 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
           }
         }
         const up = idx(x, y - 1)
-        if (y > 0 && g[up] === EMPTY) { g[up] = c; g[p] = EMPTY }
+        if (y > 0 && g[up] === EMPTY) { g[up] = c; g[p] = EMPTY; stampGrid[up] = tickParity }
         else {
           const dx = rand() < 0.5 ? -1 : 1
           if (y > 0 && x + dx >= 0 && x + dx < cols && g[idx(x + dx, y - 1)] === EMPTY) {
-            g[idx(x + dx, y - 1)] = c; g[p] = EMPTY
+            const d = idx(x + dx, y - 1); g[d] = c; g[p] = EMPTY; stampGrid[d] = tickParity
           }
         }
         continue
@@ -85,13 +86,13 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
         if (y === 0) { g[p] = EMPTY; continue }
         if (rand() < 0.02) { g[p] = EMPTY; continue }
         const up = idx(x, y - 1)
-        if (y > 0 && g[up] === EMPTY) { g[up] = GAS; g[p] = EMPTY }
+        if (y > 0 && g[up] === EMPTY) { g[up] = GAS; g[p] = EMPTY; stampGrid[up] = tickParity }
         else {
           const dx = rand() < 0.5 ? -1 : 1
           if (y > 0 && x + dx >= 0 && x + dx < cols && g[idx(x + dx, y - 1)] === EMPTY) {
-            g[idx(x + dx, y - 1)] = GAS; g[p] = EMPTY
+            const d = idx(x + dx, y - 1); g[d] = GAS; g[p] = EMPTY; stampGrid[d] = tickParity
           } else if (x + dx >= 0 && x + dx < cols && g[idx(x + dx, y)] === EMPTY) {
-            g[idx(x + dx, y)] = GAS; g[p] = EMPTY
+            const d = idx(x + dx, y); g[d] = GAS; g[p] = EMPTY; stampGrid[d] = tickParity
           }
         }
         continue
@@ -112,11 +113,11 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
           }
         }
         const up = idx(x, y - 1)
-        if (y > 0 && g[up] === EMPTY) { g[up] = PLASMA; g[p] = EMPTY }
+        if (y > 0 && g[up] === EMPTY) { g[up] = PLASMA; g[p] = EMPTY; stampGrid[up] = tickParity }
         else {
           const dx = rand() < 0.5 ? -1 : 1
           if (y > 0 && x + dx >= 0 && x + dx < cols && g[idx(x + dx, y - 1)] === EMPTY) {
-            g[idx(x + dx, y - 1)] = PLASMA; g[p] = EMPTY
+            const d = idx(x + dx, y - 1); g[d] = PLASMA; g[p] = EMPTY; stampGrid[d] = tickParity
           }
         }
         continue
@@ -143,7 +144,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
             const sdy = rand() < 0.6 ? -1 : (rand() < 0.5 ? 0 : 1)
             const snx = x + sdx, sny = y + sdy
             if (snx >= 0 && snx < cols && sny >= 0 && sny < rows && g[idx(snx, sny)] === EMPTY) {
-              g[idx(snx, sny)] = SPORE; g[p] = EMPTY
+              const d = idx(snx, sny); g[d] = SPORE; g[p] = EMPTY; stampGrid[d] = tickParity
             }
           }
         }
@@ -158,7 +159,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
           const dy = rand() < 0.3 ? -1 : rand() < 0.5 ? 1 : 0
           const nx = x + dx, ny = y + dy
           if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && g[idx(nx, ny)] === EMPTY) {
-            g[idx(nx, ny)] = CLOUD; g[p] = EMPTY
+            const d = idx(nx, ny); g[d] = CLOUD; g[p] = EMPTY; stampGrid[d] = tickParity
           }
         }
         continue
@@ -168,7 +169,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
       if (c === FIREWORK) {
         if (y > 0 && rand() < 0.95) {
           const above = idx(x, y - 1)
-          if (g[above] === EMPTY) { g[above] = FIREWORK; g[p] = EMPTY }
+          if (g[above] === EMPTY) { g[above] = FIREWORK; g[p] = EMPTY; stampGrid[above] = tickParity }
           else {
             g[p] = EMPTY
             const r = 8
@@ -218,7 +219,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
             const above = idx(x, y - 1)
             const ac = g[above]
             if (ac === WATER || ac === ACID || ac === HONEY || ac === POISON) {
-              g[above] = BUBBLE; g[p] = ac
+              g[above] = BUBBLE; g[p] = ac; stampGrid[above] = tickParity
             } else if (ac === EMPTY) {
               g[p] = EMPTY
               for (let bi = 0; bi < 3; bi++) {
@@ -236,7 +237,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
               const side = idx(x + bdx, y)
               const sc = g[side]
               if (sc === WATER || sc === ACID || sc === HONEY || sc === POISON) {
-                g[side] = BUBBLE; g[p] = sc
+                g[side] = BUBBLE; g[p] = sc; stampGrid[side] = tickParity
               }
             }
           }
@@ -257,7 +258,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
           if (cny >= 0 && cny < rows && cnx >= 0 && cnx < cols) {
             const ci = idx(cnx, cny)
             const cc = g[ci]
-            if (cc === EMPTY) { g[ci] = COMET; g[p] = BLUE_FIRE; moved = true; break }
+            if (cc === EMPTY) { g[ci] = COMET; g[p] = BLUE_FIRE; stampGrid[ci] = tickParity; moved = true; break }
             else if (cc === WATER) { g[ci] = GAS; g[p] = BLUE_FIRE; moved = true; break }
             else if (cc === PLANT || cc === FLUFF || cc === FLOWER) { g[ci] = BLUE_FIRE; g[p] = BLUE_FIRE; moved = true; break }
             else if (cc === SAND) { g[ci] = GLASS; g[p] = BLUE_FIRE; moved = true; break }
@@ -333,7 +334,7 @@ export function risingPhysicsSystem(g: Uint8Array, cols: number, rows: number, c
           else { g[p] = EMPTY; struck = true }
         }
         if (!struck && y + 1 < rows && g[idx(x, y + 1)] === EMPTY) {
-          g[idx(x, y + 1)] = LIGHTNING; g[p] = EMPTY
+          const d = idx(x, y + 1); g[d] = LIGHTNING; g[p] = EMPTY; stampGrid[d] = tickParity
           if (rand() < 0.15) {
             const bx = x + (rand() < 0.5 ? -1 : 1)
             if (bx >= 0 && bx < cols && g[idx(bx, y)] === EMPTY) g[idx(bx, y)] = LIGHTNING
