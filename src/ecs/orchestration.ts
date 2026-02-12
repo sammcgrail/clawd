@@ -1,89 +1,43 @@
-// ECS Orchestration — bitECS world for gameplay entities (emitters, singletons)
-// The grid stays as a flat Uint8Array; ECS manages the "meta" layer around it.
+// Orchestration — manages emitter entities and grid utilities.
+// No ECS dependency; emitters are tracked in a plain Map.
 
-import {
-  createWorld, addEntity, removeEntity,
-  addComponent, commitRemovals,
-} from 'bitecs'
 import { ARCHETYPE_FLAGS, F_SPAWNER } from './archetypes'
 import { CHUNK_SHIFT } from '../sim/ChunkMap'
 import type { ChunkMap } from '../sim/ChunkMap'
 
 // ═══════════════════════════════════════════════════════════════
-// World
+// Emitter storage
 // ═══════════════════════════════════════════════════════════════
 
-export type OrcWorld = ReturnType<typeof createWorld>
+export interface Emitter {
+  x: number
+  y: number
+  typeId: number
+}
 
-export function createOrcWorld(): OrcWorld {
-  return createWorld()
+/** Maps grid index (y * cols + x) → emitter data. */
+const emitters = new Map<number, Emitter>()
+
+export function getEmitterAt(gridIndex: number): Emitter | undefined {
+  return emitters.get(gridIndex)
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Components — plain-object pattern (matches existing components.ts)
-// ═══════════════════════════════════════════════════════════════
-
-/** Grid position of an emitter entity (integer coords). */
-export const EmitterPos = { x: [] as number[], y: [] as number[] }
-
-/** Spawner type ID (TAP=23, GUN=30, etc.). Determines handler dispatch. */
-export const EmitterConfig = { typeId: [] as number[] }
-
-/** Simulation settings singleton. */
-export const SimConfig = { paused: [] as number[], physicsStep: [] as number[] }
-
-/** Camera state singleton (placeholder for future pan/zoom). */
-export const CameraState = { x: [] as number[], y: [] as number[], zoom: [] as number[] }
-
-/** Current tool/brush state singleton. */
-export const ToolState = {
-  toolId: [] as number[],
-  brushSize: [] as number[],
-  active: [] as number[],
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Position → Entity mapping
-// ═══════════════════════════════════════════════════════════════
-
-/** Maps grid index (y * cols + x) → emitter entity ID. O(1) lookup. */
-const posToEntity = new Map<number, number>()
-
-export function getEmitterAt(gridIndex: number): number | undefined {
-  return posToEntity.get(gridIndex)
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Emitter entity lifecycle
+// Emitter lifecycle
 // ═══════════════════════════════════════════════════════════════
 
 export function createEmitter(
-  world: OrcWorld, x: number, y: number, typeId: number, cols: number
-): number {
-  const eid = addEntity(world)
-  addComponent(world, eid, EmitterPos)
-  EmitterPos.x[eid] = x
-  EmitterPos.y[eid] = y
-  addComponent(world, eid, EmitterConfig)
-  EmitterConfig.typeId[eid] = typeId
-  posToEntity.set(y * cols + x, eid)
-  return eid
-}
-
-export function destroyEmitter(
-  world: OrcWorld, eid: number, cols: number
+  x: number, y: number, typeId: number, cols: number
 ): void {
-  const gridIdx = EmitterPos.y[eid] * cols + EmitterPos.x[eid]
-  posToEntity.delete(gridIdx)
-  removeEntity(world, eid)
+  emitters.set(y * cols + x, { x, y, typeId })
 }
 
-export function destroyAllEmitters(world: OrcWorld): void {
-  for (const [, eid] of posToEntity) {
-    removeEntity(world, eid)
-  }
-  posToEntity.clear()
-  commitRemovals(world)
+export function destroyEmitter(gridIndex: number): void {
+  emitters.delete(gridIndex)
+}
+
+export function destroyAllEmitters(): void {
+  emitters.clear()
 }
 
 /** Check if a particle type ID has the F_SPAWNER flag. */
@@ -93,45 +47,18 @@ export function isSpawnerType(typeId: number): boolean {
 
 /** Return all emitters as an array of {x, y, typeId} for serialization. */
 export function getAllEmitters(): Array<{ x: number; y: number; typeId: number }> {
-  const result: Array<{ x: number; y: number; typeId: number }> = []
-  for (const [, eid] of posToEntity) {
-    result.push({ x: EmitterPos.x[eid], y: EmitterPos.y[eid], typeId: EmitterConfig.typeId[eid] })
-  }
-  return result
+  return [...emitters.values()]
+}
+
+/** Iterate all emitters (avoids allocation vs getAllEmitters). */
+export function forEachEmitter(
+  fn: (emitter: Emitter, gridIndex: number) => void
+): void {
+  emitters.forEach(fn)
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Singleton entity creation
-// ═══════════════════════════════════════════════════════════════
-
-export function createSimConfigEntity(world: OrcWorld): number {
-  const eid = addEntity(world)
-  addComponent(world, eid, SimConfig)
-  SimConfig.paused[eid] = 0
-  SimConfig.physicsStep[eid] = 1000 / 60
-  return eid
-}
-
-export function createCameraEntity(world: OrcWorld): number {
-  const eid = addEntity(world)
-  addComponent(world, eid, CameraState)
-  CameraState.x[eid] = 0
-  CameraState.y[eid] = 0
-  CameraState.zoom[eid] = 1
-  return eid
-}
-
-export function createToolEntity(world: OrcWorld): number {
-  const eid = addEntity(world)
-  addComponent(world, eid, ToolState)
-  ToolState.toolId[eid] = 1     // SAND
-  ToolState.brushSize[eid] = 3
-  ToolState.active[eid] = 0
-  return eid
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Sim API — clean boundary for ECS systems to interact with grid
+// Grid utilities
 // ═══════════════════════════════════════════════════════════════
 
 /** Read a cell from the grid. Returns -1 if out of bounds. */

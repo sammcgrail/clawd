@@ -10,10 +10,8 @@ import { fallingPhysicsSystem } from './ecs/systems/falling'
 import { renderSystem } from './ecs/systems/render'
 import { ChunkMap } from './sim/ChunkMap'
 import {
-  type OrcWorld, createOrcWorld, createEmitter, destroyEmitter,
+  createEmitter, destroyEmitter,
   destroyAllEmitters, getEmitterAt, isSpawnerType, getAllEmitters,
-  createSimConfigEntity, createCameraEntity, createToolEntity,
-  SimConfig,
 } from './ecs/orchestration'
 import { emitterSystem } from './ecs/systems/emitters'
 
@@ -30,8 +28,6 @@ let cols = 0, rows = 0
 let isPaused = false
 let pendingInputs: Array<{ x: number; y: number; prevX: number; prevY: number; tool: Material | 'erase'; brushSize: number }> = []
 const chunkMap = new ChunkMap()
-let orcWorld: OrcWorld = createOrcWorld()
-let simConfigEid = -1
 
 // Camera state
 let camX = 0    // top-left world cell (float)
@@ -58,13 +54,7 @@ function initGrid(displayWidth: number, displayHeight: number) {
   camY = Math.max(0, rows - viewH)
 
   chunkMap.init(cols, rows)
-
-  // Reset ECS world and create singletons
-  destroyAllEmitters(orcWorld)
-  orcWorld = createOrcWorld()
-  simConfigEid = createSimConfigEntity(orcWorld)
-  createCameraEntity(orcWorld)
-  createToolEntity(orcWorld)
+  destroyAllEmitters()
 }
 
 function addParticles(cellX: number, cellY: number, tool: Material | 'erase', brushSize: number) {
@@ -74,10 +64,9 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
     if (cellX >= 0 && cellX < cols && cellY >= 0 && cellY < rows) {
       const idx = cellY * cols + cellX
       if (grid[idx] !== STONE && grid[idx] !== TAP && grid[idx] !== GUN && grid[idx] !== BLACK_HOLE) {
-        const oldEid = getEmitterAt(idx)
-        if (oldEid !== undefined) destroyEmitter(orcWorld, oldEid, cols)
+        if (getEmitterAt(idx) !== undefined) destroyEmitter(idx)
         grid[idx] = GUN
-        createEmitter(orcWorld, cellX, cellY, GUN, cols)
+        createEmitter(cellX, cellY, GUN, cols)
       }
     }
     chunkMap.wakeRadius(cellX, cellY, 1)
@@ -97,15 +86,14 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
           else if (matId === MOLD || matId === SPORE) spawnChance = 0.6
           if ((tool === 'erase' || Math.random() > spawnChance) &&
               (tool === 'erase' || (grid[idx] !== STONE && grid[idx] !== TAP && grid[idx] !== BLACK_HOLE))) {
-            // Destroy old emitter entity if overwriting a spawner cell
-            const oldEid = getEmitterAt(idx)
-            if (oldEid !== undefined) destroyEmitter(orcWorld, oldEid, cols)
+            // Destroy old emitter if overwriting a spawner cell
+            if (getEmitterAt(idx) !== undefined) destroyEmitter(idx)
 
             grid[idx] = matId
 
-            // Create emitter entity if placing a spawner (but not CLOUD)
+            // Create emitter if placing a spawner (but not CLOUD)
             if (matId !== EMPTY && matId !== CLOUD && isSpawnerType(matId)) {
-              createEmitter(orcWorld, nx, ny, matId, cols)
+              createEmitter(nx, ny, matId, cols)
             }
           }
         }
@@ -172,7 +160,7 @@ function gameLoop(timestamp: number) {
     physicsAccum += delta
     if (physicsAccum >= PHYSICS_STEP) {
       chunkMap.flipTick()
-      emitterSystem(orcWorld, grid, cols, rows, chunkMap)
+      emitterSystem(grid, cols, rows, chunkMap)
       risingPhysicsSystem(grid, cols, rows, chunkMap)
       fallingPhysicsSystem(grid, cols, rows, chunkMap)
       chunkMap.updateActivity(grid)
@@ -225,12 +213,11 @@ self.onmessage = (e: MessageEvent) => {
 
     case 'pause':
       isPaused = data.paused
-      if (simConfigEid !== -1) SimConfig.paused[simConfigEid] = data.paused ? 1 : 0
       break
 
     case 'reset':
       grid.fill(0)
-      destroyAllEmitters(orcWorld)
+      destroyAllEmitters()
       chunkMap.wakeAll()
       // Reset world buffer to background
       if (worldData32) worldData32.fill(BG_COLOR)
@@ -240,10 +227,10 @@ self.onmessage = (e: MessageEvent) => {
       // Binary format: "SAND" magic (4) + cols u16 (2) + rows u16 (2)
       //   + grid data (cols*rows) + emitter count u32 (4)
       //   + per emitter: x u16 (2) + y u16 (2) + typeId u8 (1)
-      const emitters = getAllEmitters()
+      const emittersArr = getAllEmitters()
       const headerSize = 4 + 2 + 2  // magic + cols + rows
       const emitterHeaderSize = 4   // count
-      const emitterDataSize = emitters.length * 5
+      const emitterDataSize = emittersArr.length * 5
       const totalSize = headerSize + grid.length + emitterHeaderSize + emitterDataSize
       const buf = new ArrayBuffer(totalSize)
       const view = new DataView(buf)
@@ -259,9 +246,9 @@ self.onmessage = (e: MessageEvent) => {
 
       // Emitters
       let offset = headerSize + grid.length
-      view.setUint32(offset, emitters.length, true)
+      view.setUint32(offset, emittersArr.length, true)
       offset += 4
-      for (const em of emitters) {
+      for (const em of emittersArr) {
         view.setUint16(offset, em.x, true)
         view.setUint16(offset + 2, em.y, true)
         u8[offset + 4] = em.typeId
@@ -288,12 +275,7 @@ self.onmessage = (e: MessageEvent) => {
       grid.set(loadU8.subarray(headerSize, headerSize + cols * rows))
 
       // Restore emitters
-      destroyAllEmitters(orcWorld)
-      orcWorld = createOrcWorld()
-      simConfigEid = createSimConfigEntity(orcWorld)
-      createCameraEntity(orcWorld)
-      createToolEntity(orcWorld)
-      if (simConfigEid !== -1) SimConfig.paused[simConfigEid] = isPaused ? 1 : 0
+      destroyAllEmitters()
 
       let loadOffset = headerSize + cols * rows
       const emitterCount = loadView.getUint32(loadOffset, true)
@@ -302,7 +284,7 @@ self.onmessage = (e: MessageEvent) => {
         const ex = loadView.getUint16(loadOffset, true)
         const ey = loadView.getUint16(loadOffset + 2, true)
         const eType = loadU8[loadOffset + 4]
-        createEmitter(orcWorld, ex, ey, eType, cols)
+        createEmitter(ex, ey, eType, cols)
         loadOffset += 5
       }
 
