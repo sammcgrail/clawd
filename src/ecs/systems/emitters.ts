@@ -1,11 +1,8 @@
-// Emitter ECS system — runs once per tick, before physics passes.
-// Queries all emitter entities, validates grid cells, dispatches to handlers.
-// Not chunk-aware: spawners always run even in sleeping chunks.
+// Emitter system — runs once per tick, before physics passes.
+// Iterates all emitters, validates grid cells, dispatches to handlers.
 
-import { query, commitRemovals } from 'bitecs'
 import {
-  type OrcWorld, EmitterPos, EmitterConfig,
-  destroyEmitter,
+  forEachEmitter, destroyEmitter,
 } from '../orchestration'
 import {
   TAP, ANTHILL, HIVE, NEST, GUN, VOLCANO, STAR, BLACK_HOLE,
@@ -29,28 +26,25 @@ const WAKE_RADIUS: Partial<Record<number, number>> = {
 }
 
 export function emitterSystem(
-  world: OrcWorld,
   g: Uint8Array,
   cols: number,
   rows: number,
   chunkMap: ChunkMap,
 ): void {
-  const emitters = query(world, [EmitterPos, EmitterConfig])
   const rand = Math.random
+  const toDestroy: number[] = []
 
-  for (const eid of emitters) {
-    const x = EmitterPos.x[eid]
-    const y = EmitterPos.y[eid]
-    const typeId = EmitterConfig.typeId[eid]
+  forEachEmitter((emitter, gridIndex) => {
+    const { x, y, typeId } = emitter
     const p = y * cols + x
 
     // Orphan check: grid cell no longer matches → spawner was destroyed
     if (g[p] !== typeId) {
-      destroyEmitter(world, eid, cols)
-      continue
+      toDestroy.push(gridIndex)
+      return
     }
 
-    // Dispatch to existing handler function
+    // Dispatch to handler
     switch (typeId) {
       case TAP:        updateTap(g, x, y, p, cols, rows, rand); break
       case ANTHILL:    updateAnthill(g, x, y, p, cols, rows, rand); break
@@ -64,14 +58,17 @@ export function emitterSystem(
 
     // Post-handler orphan check (VOLCANO can self-destruct → STONE)
     if (g[p] !== typeId) {
-      destroyEmitter(world, eid, cols)
-      continue
+      toDestroy.push(gridIndex)
+      return
     }
 
     // Wake chunks around spawner so output particles are processed
     const wakeR = WAKE_RADIUS[typeId] ?? 2
     chunkMap.wakeRadius(x, y, wakeR)
-  }
+  })
 
-  commitRemovals(world)
+  // Clean up destroyed emitters outside iteration
+  for (const idx of toDestroy) {
+    destroyEmitter(idx)
+  }
 }
