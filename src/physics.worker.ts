@@ -72,13 +72,12 @@ function addParticles(cellX: number, cellY: number, tool: Material | 'erase', br
         const nx = cellX + dx, ny = cellY + dy
         if (nx >= 0 && nx < cols && ny >= 0 && ny < rows) {
           const idx = ny * cols + nx
-          let spawnChance = 0.3
-          if (matId === BIRD || matId === BEE || matId === FIREFLY) spawnChance = 0.8
-          else if (matId === ANT || matId === BUG || matId === SLIME) spawnChance = 0.7
+          let spawnChance = 0.55
+          if (matId === BIRD || matId === BEE || matId === FIREFLY) spawnChance = 0.85
+          else if (matId === ANT || matId === BUG || matId === SLIME) spawnChance = 0.75
           else if (matId === ALIEN || matId === QUARK) spawnChance = 0.92
-          else if (matId === MOLD || matId === SPORE) spawnChance = 0.6
-          if ((tool === 'erase' || Math.random() > spawnChance) &&
-              (tool === 'erase' || (grid[idx] !== STONE && grid[idx] !== TAP && grid[idx] !== BLACK_HOLE))) {
+          else if (matId === MOLD || matId === SPORE) spawnChance = 0.65
+          if ((tool === 'erase' || (Math.random() > spawnChance && grid[idx] === EMPTY))) {
             grid[idx] = matId
           }
         }

@@ -84,9 +84,9 @@ export const ARCHETYPES: (ArchetypeDef | null)[] = []
 ARCHETYPES[EMPTY] = null
 
 // Granular solids
-ARCHETYPES[SAND] = { gravity: 1.0, density: 5, color: COLORS_U32[SAND] }
-ARCHETYPES[DIRT] = { gravity: 1.0, density: 4, color: COLORS_U32[DIRT] }
-ARCHETYPES[GUNPOWDER] = { gravity: 1.0, density: 4, explosive: [6, 0], flammable: true, color: COLORS_U32[GUNPOWDER] }
+ARCHETYPES[SAND] = { gravity: 0.9, density: 5, color: COLORS_U32[SAND] }
+ARCHETYPES[DIRT] = { gravity: 0.9, density: 4, color: COLORS_U32[DIRT] }
+ARCHETYPES[GUNPOWDER] = { gravity: 0.9, density: 4, explosive: [6, 0], flammable: true, color: COLORS_U32[GUNPOWDER] }
 ARCHETYPES[SNOW] = { gravity: 0.25, meltOnHeat: WATER, color: COLORS_U32[SNOW] }
 ARCHETYPES[RUST] = { gravity: 0.1, volatile: [0.005, DIRT], infectiousHandler: true, color: COLORS_U32[RUST] }
 ARCHETYPES[FLUFF] = { gravity: 0.3, flammable: true, color: COLORS_U32[FLUFF] }
@@ -94,12 +94,12 @@ ARCHETYPES[DUST] = { gravity: 0.3, flammable: true, explosive: [2, 0], volatile:
 ARCHETYPES[GLITTER] = { gravity: 0.3, volatile: [0.03, EMPTY], color: COLORS_U32[GLITTER] }
 
 // Liquids
-ARCHETYPES[WATER] = { gravity: 1.0, liquid: 0.5, density: 2, color: COLORS_U32[WATER] }
+ARCHETYPES[WATER] = { gravity: 0.9, liquid: 0.5, density: 2, color: COLORS_U32[WATER] }
 ARCHETYPES[HONEY] = { gravity: 0.15, liquid: 0.3, density: 3, color: COLORS_U32[HONEY] }
-ARCHETYPES[NITRO] = { gravity: 1.0, liquid: 0.5, density: 3, explosive: [12, 1], color: COLORS_U32[NITRO] }
+ARCHETYPES[NITRO] = { gravity: 0.9, liquid: 0.5, density: 3, explosive: [12, 1], color: COLORS_U32[NITRO] }
 ARCHETYPES[SLIME] = { gravity: 0.4, liquid: 0.3, density: 2, meltOnHeat: GAS, color: COLORS_U32[SLIME] }
 ARCHETYPES[POISON] = { gravity: 0.3, liquid: 0.5, density: 2, killsCreatures: true, corrosiveHandler: true, color: COLORS_U32[POISON] }
-ARCHETYPES[ACID] = { gravity: 1.0, liquid: 0.5, density: 3, killsCreatures: true, corrosiveHandler: true, color: COLORS_U32[ACID] }
+ARCHETYPES[ACID] = { gravity: 0.9, liquid: 0.5, density: 3, killsCreatures: true, corrosiveHandler: true, color: COLORS_U32[ACID] }
 ARCHETYPES[LAVA] = { gravity: 0.15, liquid: 0.3, density: 6, heatSource: true, corrosiveHandler: true, color: COLORS_U32[LAVA] }
 ARCHETYPES[MERCURY] = { gravity: 1.0, liquid: 0.5, density: 8, killsCreatures: true, corrosiveHandler: true, color: COLORS_U32[MERCURY] }
 
