@@ -124,6 +124,12 @@ The game builds to `/docs` folder for GitHub Pages deployment.
 | **Gun** | Dark grey | Static, shoots bullets in random directions (single pixel placement) |
 | **Star** | Bright yellow | Sun emitter - continuously spawns glitter and static particles nearby |
 
+### Transport
+| Particle | Color | Behavior |
+|----------|-------|----------|
+| **Boat** | Wooden brown | Floats on water surface, moves left/right, picks up creatures to form a trailing train |
+| **Car** | Crimson red | Drives on solid ground, moves left/right, picks up creatures to form a trailing train, dies in water |
+
 ### Projectiles (Internal - not paintable)
 | Particle | Color | Behavior |
 |----------|-------|----------|
@@ -522,6 +528,24 @@ flowchart TD
 
     Star[Sun] -->|emits| Glitter
     Star -->|emits| Static[Static]
+```
+
+### Transport Behavior
+```mermaid
+flowchart LR
+    Boat[Boat] -->|floats on| Water[Water]
+    Boat -->|moves| LeftRight[Left/Right]
+    Boat -->|picks up| Creatures[Creatures]
+    Creatures -->|follow in| Train[Trailing Train]
+
+    Car[Car] -->|drives on| Ground[Solid Ground]
+    Car -->|moves| LeftRight2[Left/Right]
+    Car -->|picks up| Creatures2[Creatures]
+    Creatures2 -->|follow in| Train2[Trailing Train]
+
+    Fire[Fire/Lava] -->|destroys| Boat
+    Fire -->|destroys| Car
+    Water -->|destroys| Car
 ```
 
 ---
