@@ -1,14 +1,115 @@
-import { EMPTY, WATER, FIRE, LAVA, PLASMA, BOAT, CAR, BUG, ANT, BIRD, BEE, WORM, FISH, FIREFLY, FAIRY, MOTH } from '../constants'
+import { EMPTY, WATER, FIRE, LAVA, PLASMA, BOAT, CAR, BUG, ANT, BIRD, BEE, WORM, FISH, FIREFLY, FAIRY, MOTH, SLIME } from '../constants'
 
 // Creatures that can be picked up by transport
-const PASSENGERS = new Set([BUG, ANT, BIRD, BEE, WORM, FISH, FIREFLY, FAIRY, MOTH])
+const PASSENGERS = new Set([BUG, ANT, BIRD, BEE, WORM, FISH, FIREFLY, FAIRY, MOTH, SLIME])
 
 function inBounds(x: number, y: number, cols: number, rows: number): boolean {
   return x >= 0 && x < cols && y >= 0 && y < rows
 }
 
+// Check if a cell is passable for boats (empty or water)
+function isBoatPassable(cell: number): boolean {
+  return cell === EMPTY || cell === WATER
+}
+
+// Check if a cell is solid ground (not empty, water, fire, lava, etc)
+function isSolidGround(cell: number): boolean {
+  return cell !== EMPTY && cell !== WATER && cell !== FIRE && cell !== LAVA && cell !== PLASMA
+}
+
 /**
- * BOAT: floats on water, moves left/right, picks up creatures in a train behind it
+ * Hook nearby creatures into the train behind the transport
+ * Scans area around current position and moves creatures to trail behind
+ */
+function hookNearbyCreatures(g: Uint8Array, x: number, y: number, dir: number, cols: number, rows: number): void {
+  // Check 3x3 area around transport for creatures to hook
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -2; dx <= 2; dx++) {
+      if (dx === 0 && dy === 0) continue
+      // Skip the direction we're moving into
+      if (dx === dir) continue
+
+      const checkX = x + dx
+      const checkY = y + dy
+      if (!inBounds(checkX, checkY, cols, rows)) continue
+
+      const checkIdx = checkY * cols + checkX
+      const cell = g[checkIdx]
+
+      if (PASSENGERS.has(cell)) {
+        // Find a spot behind the transport for this creature
+        const behindX = x - dir
+        if (inBounds(behindX, y, cols, rows)) {
+          const behindIdx = y * cols + behindX
+          if (g[behindIdx] === EMPTY) {
+            g[behindIdx] = cell
+            g[checkIdx] = EMPTY
+          } else {
+            // Try one more spot back
+            const behindX2 = x - dir * 2
+            if (inBounds(behindX2, y, cols, rows)) {
+              const behindIdx2 = y * cols + behindX2
+              if (g[behindIdx2] === EMPTY) {
+                g[behindIdx2] = cell
+                g[checkIdx] = EMPTY
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Pull passengers in a chain from behind the transport
+ */
+function pullPassengerTrain(g: Uint8Array, x: number, y: number, dir: number, cols: number, rows: number): void {
+  // The transport moved in 'dir' direction, so passengers are behind at x - dir
+  // We need to pull them forward to follow
+
+  const behindDir = -dir
+  let positions: Array<{x: number, y: number, type: number}> = []
+
+  // Scan behind for passengers (up to 8 cells back, check vertically too)
+  for (let dist = 1; dist <= 8; dist++) {
+    const checkX = x + behindDir * dist
+
+    // Check at same height and +/-1 height
+    for (let dy = -1; dy <= 1; dy++) {
+      const checkY = y + dy
+      if (!inBounds(checkX, checkY, cols, rows)) continue
+
+      const checkIdx = checkY * cols + checkX
+      const cell = g[checkIdx]
+
+      if (PASSENGERS.has(cell)) {
+        positions.push({ x: checkX, y: checkY, type: cell })
+      }
+    }
+  }
+
+  // Move each passenger one step closer to the transport
+  for (const pos of positions) {
+    const moveDir = dir // Move toward transport
+    const newX = pos.x + moveDir
+    const newY = pos.y
+
+    if (!inBounds(newX, newY, cols, rows)) continue
+
+    const newIdx = newY * cols + newX
+    const oldIdx = pos.y * cols + pos.x
+
+    // Only move if destination is empty
+    if (g[newIdx] === EMPTY) {
+      g[newIdx] = pos.type
+      g[oldIdx] = EMPTY
+    }
+  }
+}
+
+/**
+ * BOAT: floats on water, moves left/right (2-3 cells), picks up creatures in a train behind it
  */
 export function updateBoat(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
   // Check for hazards
@@ -50,39 +151,62 @@ export function updateBoat(g: Uint8Array, x: number, y: number, p: number, cols:
     return
   }
 
-  // Move horizontally with some randomness
-  if (rand() < 0.3) return // Sometimes rest
+  // Move horizontally - longer movement (2-3 cells)
+  if (rand() < 0.2) return // Sometimes rest
 
   const dir = rand() < 0.5 ? -1 : 1
-  const nx = x + dir
+  const moveDistance = rand() < 0.6 ? 2 : 3 // Move 2-3 cells
 
-  if (!inBounds(nx, y, cols, rows)) return
+  // Find how far we can actually move
+  let actualMove = 0
+  for (let d = 1; d <= moveDistance; d++) {
+    const checkX = x + dir * d
+    if (!inBounds(checkX, y, cols, rows)) break
 
-  const targetIdx = y * cols + nx
-  const target = g[targetIdx]
+    const checkIdx = y * cols + checkX
+    const checkCell = g[checkIdx]
 
-  // Can move into empty space or water
-  if (target === EMPTY || target === WATER) {
-    // Before moving, check for passengers to pull
-    pullPassengers(g, x, y, -dir, cols, rows) // Pull from opposite direction
-
-    g[targetIdx] = BOAT
-    g[p] = below === WATER ? WATER : EMPTY
-  }
-  // Can pick up passengers when hitting them
-  else if (PASSENGERS.has(target)) {
-    // Push the passenger into a trailing position
-    const behindX = x - dir
-    if (inBounds(behindX, y, cols, rows) && g[y * cols + behindX] === EMPTY) {
-      g[y * cols + behindX] = target
+    // Check if we can pass through (empty, water, or passenger)
+    if (isBoatPassable(checkCell)) {
+      // Also need water below to float
+      const checkBelowIdx = (y + 1) * cols + checkX
+      const checkBelow = y < rows - 1 ? g[checkBelowIdx] : EMPTY
+      if (checkBelow === WATER) {
+        actualMove = d
+      } else {
+        break
+      }
+    } else if (PASSENGERS.has(checkCell)) {
+      // Hook this creature
+      const behindX = x - dir
+      if (inBounds(behindX, y, cols, rows) && g[y * cols + behindX] === EMPTY) {
+        g[y * cols + behindX] = checkCell
+        g[checkIdx] = EMPTY
+      }
+      actualMove = d
+    } else {
+      break
     }
+  }
+
+  if (actualMove > 0) {
+    const targetX = x + dir * actualMove
+    const targetIdx = y * cols + targetX
+
+    // Hook nearby creatures before moving
+    hookNearbyCreatures(g, x, y, dir, cols, rows)
+
+    // Move the boat
     g[targetIdx] = BOAT
-    g[p] = below === WATER ? WATER : EMPTY
+    g[p] = WATER // Leave water behind
+
+    // Pull the passenger train
+    pullPassengerTrain(g, targetX, y, dir, cols, rows)
   }
 }
 
 /**
- * CAR: drives on solid ground, moves left/right, picks up creatures in a train behind it
+ * CAR: drives on solid ground, moves left/right (2-3 cells), climbs ledges up to 5 blocks, picks up creatures
  */
 export function updateCar(g: Uint8Array, x: number, y: number, p: number, cols: number, rows: number, rand: () => number): void {
   // Check for hazards
@@ -110,8 +234,7 @@ export function updateCar(g: Uint8Array, x: number, y: number, p: number, cols: 
   const below = y < rows - 1 ? g[belowIdx] : EMPTY
 
   // If nothing solid below, fall
-  const isSolid = below !== EMPTY && below !== WATER && below !== FIRE && below !== LAVA
-  if (!isSolid && y < rows - 1) {
+  if (!isSolidGround(below) && y < rows - 1) {
     if (below === EMPTY) {
       g[belowIdx] = CAR
       g[p] = EMPTY
@@ -119,82 +242,106 @@ export function updateCar(g: Uint8Array, x: number, y: number, p: number, cols: 
     return
   }
 
-  // Move horizontally with some randomness
-  if (rand() < 0.25) return // Sometimes rest
+  // Move horizontally - longer movement (2-3 cells)
+  if (rand() < 0.15) return // Sometimes rest
 
   const dir = rand() < 0.5 ? -1 : 1
-  const nx = x + dir
+  const moveDistance = rand() < 0.5 ? 2 : 3 // Move 2-3 cells
 
-  if (!inBounds(nx, y, cols, rows)) return
+  // Find how far we can actually move, including climbing
+  let actualMove = 0
+  let climbHeight = 0
 
-  const targetIdx = y * cols + nx
-  const target = g[targetIdx]
+  for (let d = 1; d <= moveDistance; d++) {
+    const checkX = x + dir * d
+    if (!inBounds(checkX, y - climbHeight, cols, rows)) break
 
-  // Check if there's ground at the new position
-  const newBelowIdx = (y + 1) * cols + nx
-  const newBelow = y < rows - 1 ? g[newBelowIdx] : EMPTY
-  const hasGround = newBelow !== EMPTY && newBelow !== WATER
+    const checkY = y - climbHeight
+    const checkIdx = checkY * cols + checkX
+    const checkCell = g[checkIdx]
 
-  // Can move into empty space if there's ground
-  if (target === EMPTY && hasGround) {
-    // Pull passengers from behind
-    pullPassengers(g, x, y, -dir, cols, rows)
+    if (checkCell === EMPTY || PASSENGERS.has(checkCell)) {
+      // Check if there's ground at this position
+      const groundIdx = (checkY + 1) * cols + checkX
+      const groundCell = checkY < rows - 1 ? g[groundIdx] : EMPTY
 
-    g[targetIdx] = CAR
-    g[p] = EMPTY
-  }
-  // Can climb up one block
-  else if (target !== EMPTY && target !== WATER && y > 0) {
-    const aboveIdx = (y - 1) * cols + x
-    const aboveTargetIdx = (y - 1) * cols + nx
-    if (g[aboveIdx] === EMPTY && g[aboveTargetIdx] === EMPTY) {
-      pullPassengers(g, x, y, -dir, cols, rows)
-      g[aboveTargetIdx] = CAR
-      g[p] = EMPTY
-    }
-  }
-  // Can pick up passengers when hitting them
-  else if (PASSENGERS.has(target)) {
-    const behindX = x - dir
-    if (inBounds(behindX, y, cols, rows) && g[y * cols + behindX] === EMPTY) {
-      g[y * cols + behindX] = target
-    }
-    g[targetIdx] = CAR
-    g[p] = EMPTY
-  }
-}
-
-/**
- * Pull passengers in a chain from the specified direction
- */
-function pullPassengers(g: Uint8Array, x: number, y: number, fromDir: number, cols: number, rows: number): void {
-  // Look behind for passengers to pull forward
-  let checkX = x + fromDir
-  let prevX = x
-
-  for (let i = 0; i < 5; i++) { // Max chain length of 5
-    if (!inBounds(checkX, y, cols, rows)) break
-
-    const checkIdx = y * cols + checkX
-    const cell = g[checkIdx]
-
-    if (PASSENGERS.has(cell)) {
-      // Pull this passenger toward the transport
-      const pullToIdx = y * cols + prevX
-      if (g[pullToIdx] === EMPTY) {
-        g[pullToIdx] = cell
-        g[checkIdx] = EMPTY
-        prevX = checkX
-        checkX += fromDir
+      if (isSolidGround(groundCell)) {
+        // Hook any passengers we're passing through
+        if (PASSENGERS.has(checkCell)) {
+          const behindX = x - dir
+          if (inBounds(behindX, y, cols, rows) && g[y * cols + behindX] === EMPTY) {
+            g[y * cols + behindX] = checkCell
+            g[checkIdx] = EMPTY
+          }
+        }
+        actualMove = d
+      } else if (groundCell === EMPTY) {
+        // No ground, check if we can drop down (max 2 blocks)
+        for (let dropDist = 1; dropDist <= 2; dropDist++) {
+          const dropY = checkY + dropDist
+          if (!inBounds(checkX, dropY, cols, rows)) break
+          const dropGroundIdx = (dropY + 1) * cols + checkX
+          const dropGround = dropY < rows - 1 ? g[dropGroundIdx] : EMPTY
+          if (isSolidGround(dropGround) && g[dropY * cols + checkX] === EMPTY) {
+            actualMove = d
+            climbHeight = -dropDist // Negative means dropping
+            break
+          }
+        }
+        if (actualMove < d) break // Couldn't find ground
       } else {
         break
       }
-    } else if (cell === EMPTY) {
-      // Gap in chain, stop pulling
-      break
+    } else if (isSolidGround(checkCell)) {
+      // Hit a wall - try to climb it (up to 5 blocks)
+      let canClimb = false
+      for (let climbDist = 1; climbDist <= 5; climbDist++) {
+        const climbY = checkY - climbDist
+        if (!inBounds(checkX, climbY, cols, rows)) break
+
+        const climbIdx = climbY * cols + checkX
+        const climbCell = g[climbIdx]
+
+        // Check if we can stand at this height
+        if (climbCell === EMPTY || PASSENGERS.has(climbCell)) {
+          // Make sure there's space for the car (need empty above too if climbing)
+          const aboveClimbIdx = (climbY - 1) * cols + checkX
+          const aboveClear = climbY === 0 || g[aboveClimbIdx] === EMPTY
+
+          // Check ground at climb destination
+          const climbGroundIdx = (climbY + 1) * cols + checkX
+          const climbGround = g[climbGroundIdx]
+
+          if (aboveClear && isSolidGround(climbGround)) {
+            actualMove = d
+            climbHeight = climbDist
+            canClimb = true
+            break
+          }
+        } else if (!isSolidGround(climbCell)) {
+          break // Hit something we can't climb through
+        }
+        // If it's solid, keep checking higher
+      }
+      if (!canClimb) break
     } else {
-      // Hit something solid, stop
       break
     }
+  }
+
+  if (actualMove > 0) {
+    const targetX = x + dir * actualMove
+    const targetY = y - climbHeight
+    const targetIdx = targetY * cols + targetX
+
+    // Hook nearby creatures before moving
+    hookNearbyCreatures(g, x, y, dir, cols, rows)
+
+    // Move the car
+    g[targetIdx] = CAR
+    g[p] = EMPTY
+
+    // Pull the passenger train
+    pullPassengerTrain(g, targetX, targetY, dir, cols, rows)
   }
 }
