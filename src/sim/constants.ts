@@ -16,9 +16,9 @@ export const WORM = 62, FAIRY = 63
 export const FISH = 64, MOTH = 65, VENT = 66
 export const LIT_GUNPOWDER = 67
 export const SMOKE = 68
-export const SPARK = 69, FOAM = 70
+export const NUKE = 69
 
-export type Material = 'empty' | 'sand' | 'water' | 'dirt' | 'stone' | 'plant' | 'fire' | 'gas' | 'fluff' | 'bug' | 'plasma' | 'nitro' | 'glass' | 'lightning' | 'slime' | 'ant' | 'alien' | 'quark' | 'crystal' | 'ember' | 'static' | 'bird' | 'gunpowder' | 'tap' | 'anthill' | 'bee' | 'flower' | 'hive' | 'honey' | 'nest' | 'gun' | 'cloud' | 'acid' | 'lava' | 'snow' | 'volcano' | 'mold' | 'mercury' | 'void' | 'seed' | 'rust' | 'spore' | 'algae' | 'poison' | 'dust' | 'firework' | 'bubble' | 'glitter' | 'star' | 'comet' | 'blackhole' | 'firefly' | 'worm' | 'fairy' | 'fish' | 'moth' | 'vent' | 'spark' | 'foam'
+export type Material = 'empty' | 'sand' | 'water' | 'dirt' | 'stone' | 'plant' | 'fire' | 'gas' | 'fluff' | 'bug' | 'plasma' | 'nitro' | 'glass' | 'lightning' | 'slime' | 'ant' | 'alien' | 'quark' | 'crystal' | 'ember' | 'static' | 'bird' | 'gunpowder' | 'tap' | 'anthill' | 'bee' | 'flower' | 'hive' | 'honey' | 'nest' | 'gun' | 'cloud' | 'acid' | 'lava' | 'snow' | 'volcano' | 'mold' | 'mercury' | 'void' | 'seed' | 'rust' | 'spore' | 'algae' | 'poison' | 'dust' | 'firework' | 'bubble' | 'glitter' | 'star' | 'comet' | 'blackhole' | 'firefly' | 'worm' | 'fairy' | 'fish' | 'moth' | 'vent' | 'nuke'
 
 export const MATERIAL_TO_ID: Record<Material, number> = {
   empty: EMPTY, sand: SAND, water: WATER, dirt: DIRT, stone: STONE, plant: PLANT,
@@ -33,7 +33,7 @@ export const MATERIAL_TO_ID: Record<Material, number> = {
   worm: WORM, fairy: FAIRY,
   fish: FISH, moth: MOTH,
   vent: VENT,
-  spark: SPARK, foam: FOAM,
+  nuke: NUKE,
 }
 
 export const CELL_SIZE = 4
@@ -70,8 +70,7 @@ export const COLORS_U32 = new Uint32Array([
   0xFF607860,
   0xFF2060FF, // LIT_GUNPOWDER: bright orange-red
   0xFFA0A0A0, // SMOKE: whitish grey
-  0xFF00FFFF, // SPARK: electric yellow
-  0xFFFFE8D0, // FOAM: light blue-white
+  0xFF00FF00, // NUKE: radioactive green
 ])
 
 export const FIRE_COLORS = new Uint32Array(32)
@@ -98,3 +97,4 @@ export const FIREWORK_BURST_RADIUS_TIMEOUT = 7
 export const LIGHTNING_NITRO_RADIUS = 15
 export const BLACK_HOLE_PULL_RADIUS = 10
 export const BLACK_HOLE_SAMPLE_COUNT = 16
+export const NUKE_EXPLOSION_RADIUS = 25

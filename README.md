@@ -124,11 +124,10 @@ The game builds to `/docs` folder for GitHub Pages deployment.
 | **Gun** | Dark grey | Static, shoots bullets in random directions (single pixel placement) |
 | **Star** | Bright yellow | Sun emitter - continuously spawns glitter and static particles nearby |
 
-### Sparks
+### Explosives
 | Particle | Color | Behavior |
 |----------|-------|----------|
-| **Spark** | Electric yellow | Bounces erratically with high energy, leaves static trails, decays into static |
-| **Foam** | Light blue-white | Floats on water, spreads and rises, pops into bubbles |
+| **Nuke** | Radioactive green | Massive contact-triggered explosion (radius 25), leaves behind fire core, slime ring, and dirt debris |
 
 ### Projectiles (Internal - not paintable)
 | Particle | Color | Behavior |
@@ -530,16 +529,14 @@ flowchart TD
     Star -->|emits| Static[Static]
 ```
 
-### Spark Behavior
+### Nuke Behavior
 ```mermaid
 flowchart LR
-    Spark[Spark] -->|moves| Random[Random Walk]
-    Spark -->|leaves| Static[Static Trail]
-    Spark -->|decays to| Static2[Static]
-
-    Foam[Foam] -->|floats on| Water[Water]
-    Foam -->|rises| Up[Upward]
-    Foam -->|pops into| Bubble[Bubble]
+    Nuke[Nuke] -->|falls with| Gravity[Gravity]
+    Nuke -->|contacts solid| Explode[EXPLOSION]
+    Explode -->|inner core| Fire[Fire + Plasma]
+    Explode -->|middle ring| Slime[Slime]
+    Explode -->|outer ring| Dirt[Dirt]
 ```
 
 ---

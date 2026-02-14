@@ -12,7 +12,7 @@ import {
   POISON,
   TAP, ANTHILL, HIVE, NEST, GUN, VOLCANO, STAR, BLACK_HOLE, VENT,
   NITRO_EXPLOSION_RADIUS, GUNPOWDER_EXPLOSION_RADIUS, GUNPOWDER_BLAST_RADIUS,
-  LIT_GUNPOWDER,
+  LIT_GUNPOWDER, NUKE, NUKE_EXPLOSION_RADIUS, DIRT,
 } from '../constants'
 import { updateBug, updateAnt, updateAlien, updateWorm, updateFairy, updateFish, updateMoth } from './creatures'
 import { updateBulletFalling, updateBulletTrail } from './projectiles'
@@ -168,6 +168,42 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
         }
         if (g[p] !== NITRO) continue
         settleFall(g, x, y, p, NITRO, cols, rows, below, belowCell, rand, stampGrid, tickParity, idx, WATER, true, 1, true)
+        continue
+      }
+
+      // NUKE: massive contact-triggered explosion leaving slime and dirt
+      if (c === NUKE) {
+        const aboveCell = y > 0 ? g[idx(x, y - 1)] : EMPTY
+        const shouldExplode =
+          (belowCell !== EMPTY && belowCell !== WATER && belowCell !== NUKE) ||
+          (aboveCell !== EMPTY && aboveCell !== WATER && aboveCell !== NUKE)
+        if (shouldExplode) {
+          const r = NUKE_EXPLOSION_RADIUS
+          for (let edy = -r; edy <= r; edy++) {
+            for (let edx = -r; edx <= r; edx++) {
+              const dist2 = edx * edx + edy * edy
+              if (dist2 <= r * r) {
+                const ex = x + edx, ey = y + edy
+                if (ex >= 0 && ex < cols && ey >= 0 && ey < rows) {
+                  const ei = idx(ex, ey), ec = g[ei]
+                  if (ec === STONE || ec === GLASS) continue // don't destroy stone/glass
+                  // Inner core: fire, middle ring: slime, outer ring: dirt
+                  const dist = Math.sqrt(dist2)
+                  if (dist < r * 0.3) {
+                    g[ei] = rand() < 0.7 ? FIRE : PLASMA
+                  } else if (dist < r * 0.6) {
+                    g[ei] = rand() < 0.6 ? SLIME : (rand() < 0.5 ? FIRE : EMPTY)
+                  } else {
+                    g[ei] = rand() < 0.5 ? DIRT : (rand() < 0.3 ? SLIME : EMPTY)
+                  }
+                }
+              }
+            }
+          }
+          continue
+        }
+        if (g[p] !== NUKE) continue
+        settleFall(g, x, y, p, NUKE, cols, rows, below, belowCell, rand, stampGrid, tickParity, idx, WATER, true, 1, true)
         continue
       }
 

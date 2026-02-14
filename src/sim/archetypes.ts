@@ -7,7 +7,7 @@ import {
   BULLET_TRAIL, CLOUD, ACID, LAVA, SNOW, VOLCANO,
   MOLD, MERCURY, VOID, SEED, RUST, SPORE, ALGAE, POISON, DUST, FIREWORK,
   BUBBLE, GLITTER, STAR, COMET, BLUE_FIRE, BLACK_HOLE, FIREFLY,
-  WORM, FAIRY, FISH, MOTH, VENT, LIT_GUNPOWDER, SMOKE, SPARK, FOAM, COLORS_U32,
+  WORM, FAIRY, FISH, MOTH, VENT, LIT_GUNPOWDER, SMOKE, NUKE, COLORS_U32,
 } from './constants'
 
 // ---------------------------------------------------------------------------
@@ -173,16 +173,15 @@ ARCHETYPES[BULLET_W] = { projectileHandler: true, color: COLORS_U32[BULLET_W] }
 ARCHETYPES[BULLET_NW] = { projectileHandler: true, color: COLORS_U32[BULLET_NW] }
 ARCHETYPES[BULLET_TRAIL] = { projectileHandler: true, volatile: [0.3, EMPTY], color: COLORS_U32[BULLET_TRAIL] }
 
-// Effects (additional)
-ARCHETYPES[SPARK] = { randomWalk: 0.9, volatile: [0.04, STATIC], spawnRate: 0.15, color: COLORS_U32[SPARK] }
-ARCHETYPES[FOAM] = { buoyancy: 0.3, volatile: [0.02, BUBBLE], spawnRate: 0.25, color: COLORS_U32[FOAM] }
+// Explosive
+ARCHETYPES[NUKE] = { gravity: 0.95, explosive: [25, 1], spawnRate: 0.08, color: COLORS_U32[NUKE] }
 
 // ---------------------------------------------------------------------------
 // ARCHETYPE_FLAGS  -- precomputed bitmask array for fast dispatch
 // ---------------------------------------------------------------------------
 
-export const ARCHETYPE_FLAGS = new Uint32Array(71)
-for (let i = 0; i < 71; i++) {
+export const ARCHETYPE_FLAGS = new Uint32Array(70)
+for (let i = 0; i < 70; i++) {
   const a = ARCHETYPES[i]
   if (!a) continue
   let f = 0
