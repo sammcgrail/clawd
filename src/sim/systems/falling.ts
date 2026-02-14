@@ -12,7 +12,7 @@ import {
   POISON,
   TAP, ANTHILL, HIVE, NEST, GUN, VOLCANO, STAR, BLACK_HOLE, VENT,
   NITRO_EXPLOSION_RADIUS, GUNPOWDER_EXPLOSION_RADIUS, GUNPOWDER_BLAST_RADIUS,
-  LIT_GUNPOWDER, NUKE, NUKE_EXPLOSION_RADIUS, DIRT,
+  LIT_GUNPOWDER, NUKE, NUKE_EXPLOSION_RADIUS, FIREWORK,
 } from '../constants'
 import { updateBug, updateAnt, updateAlien, updateWorm, updateFairy, updateFish, updateMoth } from './creatures'
 import { updateBulletFalling, updateBulletTrail } from './projectiles'
@@ -171,7 +171,7 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
         continue
       }
 
-      // NUKE: massive contact-triggered explosion leaving slime and dirt
+      // NUKE: massive contact-triggered explosion leaving slime, rust, and fireworks
       if (c === NUKE) {
         const aboveCell = y > 0 ? g[idx(x, y - 1)] : EMPTY
         const shouldExplode =
@@ -186,15 +186,25 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
                 const ex = x + edx, ey = y + edy
                 if (ex >= 0 && ex < cols && ey >= 0 && ey < rows) {
                   const ei = idx(ex, ey), ec = g[ei]
-                  if (ec === STONE || ec === GLASS) continue // don't destroy stone/glass
-                  // Inner core: fire, middle ring: slime, outer ring: dirt
+                  if (ec === STONE || ec === GLASS) continue
                   const dist = Math.sqrt(dist2)
-                  if (dist < r * 0.3) {
-                    g[ei] = rand() < 0.7 ? FIRE : PLASMA
-                  } else if (dist < r * 0.6) {
-                    g[ei] = rand() < 0.6 ? SLIME : (rand() < 0.5 ? FIRE : EMPTY)
+                  // Inner core: fire + plasma
+                  if (dist < r * 0.25) {
+                    g[ei] = rand() < 0.6 ? FIRE : PLASMA
+                  // Middle ring: slime + fire + fireworks
+                  } else if (dist < r * 0.5) {
+                    const roll = rand()
+                    if (roll < 0.4) g[ei] = SLIME
+                    else if (roll < 0.6) g[ei] = FIRE
+                    else if (roll < 0.7) g[ei] = FIREWORK
+                    else g[ei] = EMPTY
+                  // Outer ring: rust + slime + fireworks
                   } else {
-                    g[ei] = rand() < 0.5 ? DIRT : (rand() < 0.3 ? SLIME : EMPTY)
+                    const roll = rand()
+                    if (roll < 0.35) g[ei] = RUST
+                    else if (roll < 0.5) g[ei] = SLIME
+                    else if (roll < 0.6) g[ei] = FIREWORK
+                    else g[ei] = EMPTY
                   }
                 }
               }

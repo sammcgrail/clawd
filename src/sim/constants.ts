@@ -70,7 +70,7 @@ export const COLORS_U32 = new Uint32Array([
   0xFF607860,
   0xFF2060FF, // LIT_GUNPOWDER: bright orange-red
   0xFFA0A0A0, // SMOKE: whitish grey
-  0xFF00FF00, // NUKE: radioactive green
+  0xFF008800, // NUKE: dark radioactive green
 ])
 
 export const FIRE_COLORS = new Uint32Array(32)
@@ -97,4 +97,4 @@ export const FIREWORK_BURST_RADIUS_TIMEOUT = 7
 export const LIGHTNING_NITRO_RADIUS = 15
 export const BLACK_HOLE_PULL_RADIUS = 10
 export const BLACK_HOLE_SAMPLE_COUNT = 16
-export const NUKE_EXPLOSION_RADIUS = 25
+export const NUKE_EXPLOSION_RADIUS = 60
