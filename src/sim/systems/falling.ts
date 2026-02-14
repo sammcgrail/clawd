@@ -1,7 +1,7 @@
 import {
   ARCHETYPE_FLAGS,
   F_PROJECTILE, F_CREATURE, F_CORROSIVE, F_INFECTIOUS,
-  F_GROWTH, F_BUOYANCY, F_LIGHTNING, F_GRAVITY, F_LIQUID, F_IMMOBILE, F_SPAWNER, F_TRANSPORT,
+  F_GROWTH, F_BUOYANCY, F_LIGHTNING, F_GRAVITY, F_LIQUID, F_IMMOBILE, F_SPAWNER,
 } from '../archetypes'
 import {
   EMPTY, WATER, NITRO, SLIME, GUNPOWDER, SNOW,
@@ -12,14 +12,13 @@ import {
   POISON,
   TAP, ANTHILL, HIVE, NEST, GUN, VOLCANO, STAR, BLACK_HOLE, VENT,
   NITRO_EXPLOSION_RADIUS, GUNPOWDER_EXPLOSION_RADIUS, GUNPOWDER_BLAST_RADIUS,
-  LIT_GUNPOWDER, BOAT, CAR,
+  LIT_GUNPOWDER,
 } from '../constants'
 import { updateBug, updateAnt, updateAlien, updateWorm, updateFairy, updateFish, updateMoth } from './creatures'
 import { updateBulletFalling, updateBulletTrail } from './projectiles'
 import { updateAcid, updateLava, updateMold, updateMercury, updateVoid, updateRust, updatePoison } from './reactions'
 import { updatePlant, updateSeed, updateAlgae } from './growing'
 import { updateQuark, updateCrystal, updateEmber, updateStatic, updateDust, updateGlitter } from './effects'
-import { updateBoat, updateCar } from './transport'
 import {
   updateTap, updateAnthill, updateHive, updateNest,
   updateGun, updateVolcano, updateStar, updateBlackHole, updateVent,
@@ -56,12 +55,8 @@ const EFFECTS_DISPATCH: Partial<Record<number, ParticleHandler>> = {
   [QUARK]: updateQuark, [CRYSTAL]: updateCrystal, [EMBER]: updateEmber,
   [STATIC]: updateStatic, [DUST]: updateDust, [GLITTER]: updateGlitter,
 }
-const TRANSPORT_DISPATCH: Partial<Record<number, ParticleHandler>> = {
-  [BOAT]: updateBoat, [CAR]: updateCar,
-}
-
 // Combined mask for particles that have handler flags (dispatched by flag group)
-const HANDLER_MASK = F_PROJECTILE | F_CREATURE | F_CORROSIVE | F_INFECTIOUS | F_GROWTH | F_SPAWNER | F_TRANSPORT
+const HANDLER_MASK = F_PROJECTILE | F_CREATURE | F_CORROSIVE | F_INFECTIOUS | F_GROWTH | F_SPAWNER
 
 /**
  * Shared settle/fall movement for inline particles.
@@ -136,8 +131,6 @@ export function fallingPhysicsSystem(g: Uint8Array, cols: number, rows: number, 
           INFECTIOUS_DISPATCH[c]?.(g, x, y, p, cols, rows, rand)
         } else if (flags & F_GROWTH) {
           GROWTH_DISPATCH[c]?.(g, x, y, p, cols, rows, rand)
-        } else if (flags & F_TRANSPORT) {
-          TRANSPORT_DISPATCH[c]?.(g, x, y, p, cols, rows, rand)
         }
         continue
       }

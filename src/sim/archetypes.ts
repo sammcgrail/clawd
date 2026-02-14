@@ -7,7 +7,7 @@ import {
   BULLET_TRAIL, CLOUD, ACID, LAVA, SNOW, VOLCANO,
   MOLD, MERCURY, VOID, SEED, RUST, SPORE, ALGAE, POISON, DUST, FIREWORK,
   BUBBLE, GLITTER, STAR, COMET, BLUE_FIRE, BLACK_HOLE, FIREFLY,
-  WORM, FAIRY, FISH, MOTH, VENT, LIT_GUNPOWDER, SMOKE, BOAT, CAR, COLORS_U32,
+  WORM, FAIRY, FISH, MOTH, VENT, LIT_GUNPOWDER, SMOKE, SPARK, FOAM, COLORS_U32,
 } from './constants'
 
 // ---------------------------------------------------------------------------
@@ -48,7 +48,6 @@ export interface ArchetypeDef {
   fireworkHandler?: true
   bubbleHandler?: true
   cometHandler?: true
-  transportHandler?: true
 }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +77,6 @@ export const F_LIGHTNING     = 1 << 19
 export const F_FIREWORK      = 1 << 20
 export const F_BUBBLE        = 1 << 21
 export const F_COMET         = 1 << 22
-export const F_TRANSPORT     = 1 << 23
 
 // ---------------------------------------------------------------------------
 // ARCHETYPES table  (indexed by particle type ID)
@@ -175,9 +173,9 @@ ARCHETYPES[BULLET_W] = { projectileHandler: true, color: COLORS_U32[BULLET_W] }
 ARCHETYPES[BULLET_NW] = { projectileHandler: true, color: COLORS_U32[BULLET_NW] }
 ARCHETYPES[BULLET_TRAIL] = { projectileHandler: true, volatile: [0.3, EMPTY], color: COLORS_U32[BULLET_TRAIL] }
 
-// Transport
-ARCHETYPES[BOAT] = { transportHandler: true, spawnRate: 0.15, color: COLORS_U32[BOAT] }
-ARCHETYPES[CAR] = { transportHandler: true, spawnRate: 0.15, color: COLORS_U32[CAR] }
+// Effects (additional)
+ARCHETYPES[SPARK] = { randomWalk: 0.9, volatile: [0.04, STATIC], spawnRate: 0.15, color: COLORS_U32[SPARK] }
+ARCHETYPES[FOAM] = { buoyancy: 0.3, volatile: [0.02, BUBBLE], spawnRate: 0.25, color: COLORS_U32[FOAM] }
 
 // ---------------------------------------------------------------------------
 // ARCHETYPE_FLAGS  -- precomputed bitmask array for fast dispatch
@@ -211,6 +209,5 @@ for (let i = 0; i < 71; i++) {
   if (a.fireworkHandler)            f |= F_FIREWORK
   if (a.bubbleHandler)              f |= F_BUBBLE
   if (a.cometHandler)               f |= F_COMET
-  if (a.transportHandler)           f |= F_TRANSPORT
   ARCHETYPE_FLAGS[i] = f
 }

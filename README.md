@@ -124,11 +124,11 @@ The game builds to `/docs` folder for GitHub Pages deployment.
 | **Gun** | Dark grey | Static, shoots bullets in random directions (single pixel placement) |
 | **Star** | Bright yellow | Sun emitter - continuously spawns glitter and static particles nearby |
 
-### Transport
+### Sparks
 | Particle | Color | Behavior |
 |----------|-------|----------|
-| **Boat** | Wooden brown | Floats on water surface, moves left/right, picks up creatures to form a trailing train |
-| **Car** | Crimson red | Drives on solid ground, moves left/right, picks up creatures to form a trailing train, dies in water |
+| **Spark** | Electric yellow | Bounces erratically with high energy, leaves static trails, decays into static |
+| **Foam** | Light blue-white | Floats on water, spreads and rises, pops into bubbles |
 
 ### Projectiles (Internal - not paintable)
 | Particle | Color | Behavior |
@@ -530,22 +530,16 @@ flowchart TD
     Star -->|emits| Static[Static]
 ```
 
-### Transport Behavior
+### Spark Behavior
 ```mermaid
 flowchart LR
-    Boat[Boat] -->|floats on| Water[Water]
-    Boat -->|moves| LeftRight[Left/Right]
-    Boat -->|picks up| Creatures[Creatures]
-    Creatures -->|follow in| Train[Trailing Train]
+    Spark[Spark] -->|moves| Random[Random Walk]
+    Spark -->|leaves| Static[Static Trail]
+    Spark -->|decays to| Static2[Static]
 
-    Car[Car] -->|drives on| Ground[Solid Ground]
-    Car -->|moves| LeftRight2[Left/Right]
-    Car -->|picks up| Creatures2[Creatures]
-    Creatures2 -->|follow in| Train2[Trailing Train]
-
-    Fire[Fire/Lava] -->|destroys| Boat
-    Fire -->|destroys| Car
-    Water -->|destroys| Car
+    Foam[Foam] -->|floats on| Water[Water]
+    Foam -->|rises| Up[Upward]
+    Foam -->|pops into| Bubble[Bubble]
 ```
 
 ---
