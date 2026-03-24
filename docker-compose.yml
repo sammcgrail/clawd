@@ -1,0 +1,9 @@
+services:
+  sand:
+    build: .
+    container_name: sand
+    restart: unless-stopped
+    ports:
+      - "8777:8777"
+    mem_limit: 32m
+    cpus: 0.1
