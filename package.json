@@ -34,5 +34,11 @@
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",
     "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "minimatch": "^11.0.4"
+  },
+  "resolutions": {
+    "minimatch": "^11.0.4"
   }
 }
